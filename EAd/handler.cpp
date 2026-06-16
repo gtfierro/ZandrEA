@@ -745,7 +745,7 @@ inline static void set_string_array(json::value& obj, const utility::string_t& k
    }
 }
 
-static bool parse_sample_values_for_subject(
+static bool parse_legacy_sample_values_for_subject(
    const json::value& values,
    const std::vector<EPointName>& points,
    uint64_t subjectkey,
@@ -754,8 +754,8 @@ static bool parse_sample_values_for_subject(
 {
    dlist.clear();
 
-   // The backend still consumes ordered doubles; this boundary accepts either
-   // legacy arrays or named point objects and normalizes them to that order.
+   // Legacy write endpoints are positional: the client must already know the
+   // point order expected by libEA and send values in that exact order.
    if (points.empty()) {
       stringstream msg;
       msg << U("subject ") << subjectkey << U(" has no registered input points");
@@ -764,38 +764,66 @@ static bool parse_sample_values_for_subject(
       return false;
    }
 
-   if (values.is_array()) {
-      auto a = values.as_array();
-      int count = a.size();
-      if (points.size() != count) {
-         stringstream msg;
-         msg << U("channel count out of range for subject ") << subjectkey
-             << U(": expected ") << points.size() << U(", got ") << count;
-         reply[U("error")] = json::value(msg.str());
-         reply[U("returncode")] = json_reply(EGuiReply::FAIL_set_givenContainerWrongSizeForKeyGiven);
-         return false;
-      }
-      try {
-         for (auto const& v : a) {
-            if (!v.is_number()) {
-               throw std::runtime_error("non-numeric value");
-            }
-            dlist.push_back(v.as_double());
+   if (!values.is_array()) {
+      stringstream msg;
+      msg << U("values parameter for subject ") << subjectkey
+          << U(" must be an array of doubles for the legacy sample endpoint");
+      reply[U("error")] = json::value(msg.str());
+      reply[U("returncode")] = json_reply(EGuiReply::FAIL_set_givenValueOutOfRangeAllowed);
+      return false;
+   }
+
+   auto a = values.as_array();
+   int count = a.size();
+   if (points.size() != count) {
+      stringstream msg;
+      msg << U("channel count out of range for subject ") << subjectkey
+          << U(": expected ") << points.size() << U(", got ") << count;
+      reply[U("error")] = json::value(msg.str());
+      reply[U("returncode")] = json_reply(EGuiReply::FAIL_set_givenContainerWrongSizeForKeyGiven);
+      return false;
+   }
+   try {
+      for (auto const& v : a) {
+         if (!v.is_number()) {
+            throw std::runtime_error("non-numeric value");
          }
-      } catch (...) {
-         stringstream msg;
-         msg << U("Invalid value type likely due to non-numeric data for subject ") << subjectkey;
-         reply[U("error")] = json::value(msg.str());
-         reply[U("returncode")] = json_reply(EGuiReply::FAIL_set_givenValueOutOfRangeAllowed);
-         return false;
+         dlist.push_back(v.as_double());
       }
-      return true;
+   } catch (...) {
+      stringstream msg;
+      msg << U("Invalid value type likely due to non-numeric data for subject ") << subjectkey;
+      reply[U("error")] = json::value(msg.str());
+      reply[U("returncode")] = json_reply(EGuiReply::FAIL_set_givenValueOutOfRangeAllowed);
+      return false;
+   }
+   return true;
+}
+
+static bool parse_named_sample_values_for_subject(
+   const json::value& values,
+   const std::vector<EPointName>& points,
+   uint64_t subjectkey,
+   std::vector<double>& dlist,
+   json::value& reply)
+{
+   dlist.clear();
+
+   // Named uploads are the self-describing write boundary.  The profile gives
+   // clients these point names, and this method validates that payload before
+   // normalizing it back to libEA's ordered vector of doubles.
+   if (points.empty()) {
+      stringstream msg;
+      msg << U("subject ") << subjectkey << U(" has no registered input points");
+      reply[U("error")] = json::value(msg.str());
+      reply[U("returncode")] = json_reply(EGuiReply::FAIL_set_givenContainerWrongSizeForKeyGiven);
+      return false;
    }
 
    if (!values.is_object()) {
       stringstream msg;
       msg << U("values parameter for subject ") << subjectkey
-          << U(" must be an object keyed by point name or an array of doubles");
+          << U(" must be an object keyed by point name for the named sample endpoint");
       reply[U("error")] = json::value(msg.str());
       reply[U("returncode")] = json_reply(EGuiReply::FAIL_set_givenValueOutOfRangeAllowed);
       return false;
@@ -1773,7 +1801,7 @@ void handler::handle_put(http_request message)
                goto done;
             }
             std::vector<double> dlist;
-            if (parse_sample_values_for_subject(values, points, subjectkey, dlist, reply)) {
+            if (parse_legacy_sample_values_for_subject(values, points, subjectkey, dlist, reply)) {
                TRYAPI1(values,
                   p_Port->SetCoincidentInputsForSubject(dlist, subject);
                   update_seq();
@@ -1861,7 +1889,7 @@ void handler::handle_put(http_request message)
                      goto done;
                   }
                   std::vector<double> dlist;
-                  if (!parse_sample_values_for_subject(values, points, subjectkey, dlist, reply)) {
+                  if (!parse_legacy_sample_values_for_subject(values, points, subjectkey, dlist, reply)) {
                      ucout << funcname << U(": ") << reply[U("error")].as_string() << endl;
                      retval = status_codes::BadRequest;
                      goto done;
@@ -1870,6 +1898,109 @@ void handler::handle_put(http_request message)
                      p_Port->SetCoincidentInputsForSubject(dlist, subject);
                      stringstream msg;
                      msg << U("added sample of ") << dlist.size() << U(" channels to subject ") << subjectkey;
+                     reply[U("returncode")] = json_reply(EGuiReply::OKAY_allDone);
+                     reply[U("status")] = json::value(msg.str());
+                  );
+               } // end foreach(subject)
+
+            } else {
+               stringstream msg;
+               msg << U("values_by_subject parameter must be array of objects with subject and values parameters");
+               ucout << funcname << U(": ") << msg.str() << endl;
+               reply[U("error")] = json::value(msg.str());
+               reply[U("returncode")] = json_reply(EGuiReply::FAIL_set_givenValueOutOfRangeAllowed);
+               retval = status_codes::BadRequest;
+            }
+            if (retval == status_codes::OK) {
+               p_Port->SingleStepDomainOnTimeAndInputs();
+               update_seq();
+            } else {
+               ucout << funcname << ": skipping SingleStep because of previous errors" << endl;
+            }
+         } else {
+            stringstream msg;
+            msg << U("time and/or values_by_subject parameters not found");
+            ucout << funcname << U(": ") << msg.str() << endl;
+            reply[U("error")] = json::value(msg.str());
+            reply[U("returncode")] = json_reply(EGuiReply::FAIL_set_givenValueOutOfRangeAllowed);
+            retval = status_codes::BadRequest;
+         }
+
+      } else if (path == U("/ctrl/sampletimestep-named")) {
+         const auto funcname = U("SampleTimeStepNamed");
+         time_t timestamp;
+         json::value valuesbysubject;
+         uint64_t subjectkey;
+         std::lock_guard<std::mutex> stslock(instance_sampletimestep_lock);  // released at end of scope
+         if (  handler::get_json_value(false, jvalue, querystringmap, U("values_by_subject"), valuesbysubject) &&
+               handler::get_json_value(false, jvalue, querystringmap, U("time"), reply, timestamp) ) {
+            std::tm tm;
+            localtime_s(&tm, &timestamp);
+            TRYAPI1(time,
+               p_Port->SetTimeStampInDomain(tm);
+               reply[U("status")] = json::value(U("time set"));
+               reply[U("returncode")] = json::value(0);
+               retval = status_codes::OK;
+            );
+            if (valuesbysubject.is_array() && retval == status_codes::OK) {
+               for (const auto & json_o : valuesbysubject.as_array()) {
+                  // json_o is a json object with properties "subject" and "values"
+                  uint64_t subjectkey = 0;
+                  if (!json_o.is_object()) {
+                     stringstream msg;
+                     msg << U("values_by_subject entries must be objects with subject and values parameters");
+                     ucout << funcname << U(": ") << msg.str() << endl;
+                     reply[U("error")] = json::value(msg.str());
+                     reply[U("returncode")] = json_reply(EGuiReply::FAIL_set_givenValueOutOfRangeAllowed);
+                     retval = status_codes::BadRequest;
+                     goto done;
+                  }
+                  try {
+                     subjectkey = json_o.at(U("subject")).as_number().to_uint64();
+                  } catch (...) {
+                     stringstream msg;
+                     msg << U("subject parameter missing or invalid in values_by_subject entry");
+                     ucout << funcname << U(": ") << msg.str() << endl;
+                     reply[U("error")] = json::value(msg.str());
+                     reply[U("returncode")] = json_reply(EGuiReply::FAIL_any_givenKeyNotValidForFunctionCalled);
+                     retval = status_codes::BadRequest;
+                     goto done;
+                  };
+                  NGuiKey subject(subjectkey);
+                  std::vector<EPointName> points;
+                  try {
+                     points = p_Port->SayInputPointNameOrderExpectedBySubject(subject);
+                  } catch (...) {
+                     stringstream msg;
+                     msg << U("invalid subject key ") << subjectkey;
+                     ucout << funcname << U(": ") << msg.str() << endl;
+                     reply[U("error")] = json::value(msg.str());
+                     reply[U("returncode")] = json_reply(EGuiReply::FAIL_any_givenKeyNotValidForFunctionCalled);
+                     retval = status_codes::BadRequest;
+                     goto done;
+                  };
+                  json::value values;
+                  try {
+                     values = json_o.at(U("values"));
+                  } catch (...) {
+                     stringstream msg;
+                     msg << U("values parameter missing for subject ") << subjectkey;
+                     ucout << funcname << U(": ") << msg.str() << endl;
+                     reply[U("error")] = json::value(msg.str());
+                     reply[U("returncode")] = json_reply(EGuiReply::FAIL_set_givenValueOutOfRangeAllowed);
+                     retval = status_codes::BadRequest;
+                     goto done;
+                  }
+                  std::vector<double> dlist;
+                  if (!parse_named_sample_values_for_subject(values, points, subjectkey, dlist, reply)) {
+                     ucout << funcname << U(": ") << reply[U("error")].as_string() << endl;
+                     retval = status_codes::BadRequest;
+                     goto done;
+                  }
+                  TRYAPI1(valuesbysubject,
+                     p_Port->SetCoincidentInputsForSubject(dlist, subject);
+                     stringstream msg;
+                     msg << U("added named sample of ") << dlist.size() << U(" channels to subject ") << subjectkey;
                      reply[U("returncode")] = json_reply(EGuiReply::OKAY_allDone);
                      reply[U("status")] = json::value(msg.str());
                   );

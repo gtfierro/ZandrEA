@@ -183,7 +183,7 @@ class RestClient:
 
     def sample_time_step(self, timestamp, values_by_subject):
         body = {"time": timestamp, "values_by_subject": values_by_subject}
-        return self.request("PUT", "/ctrl/sampletimestep", json=body).json()
+        return self.request("PUT", "/ctrl/sampletimestep-named", json=body).json()
 
     def new_alerts_then_clear(self):
         return self.request("GET", "/alerts").json().get("alerts", [])
