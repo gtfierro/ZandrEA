@@ -602,6 +602,7 @@ typedef struct SGuiPackSubjectBasic {
    EGuiType                                  ownType;
    NGuiKey                                   ownKey;
    NGuiKey                                   hostDomainKey;
+   // Stable model/profile identity derived from the subject EDataLabel.
    std::string                               ownLabelId;
    std::string                               ownNameText;
    std::vector<std::string>                  infoText_byCR; // Getter makes subj label the 1st line

@@ -29,6 +29,7 @@ See the License for the specific language governing permissions and limitations 
 /////////1/////////2/////////3/////////4/////////5/////////6/////////7/////////8/////////9/////////C/////
 // Implementation of abstract base class for all Subject objects
 
+// Export a stable profile identifier without exposing EDataLabel in exportTypes.hpp.
 static std::string SubjectLabelId( EDataLabel label ) {
 
    switch( label ) {

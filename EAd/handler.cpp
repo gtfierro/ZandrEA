@@ -754,6 +754,8 @@ static bool parse_sample_values_for_subject(
 {
    dlist.clear();
 
+   // The backend still consumes ordered doubles; this boundary accepts either
+   // legacy arrays or named point objects and normalizes them to that order.
    if (points.empty()) {
       stringstream msg;
       msg << U("subject ") << subjectkey << U(" has no registered input points");
@@ -940,6 +942,8 @@ const json::value handler::json_subject(const NGuiKey & key, bool recurse) {
 
 const json::value handler::json_profiles(void) {
    json::value obj;
+   // Profiles are model contracts: subjects sharing the same libEA label id
+   // and expected point list share a profile. Source-specific names stay in clients.
    struct ProfileInfo {
       std::string id;
       std::string label_id;
