@@ -29,7 +29,9 @@ See the License for the specific language governing permissions and limitations 
 /////////1/////////2/////////3/////////4/////////5/////////6/////////7/////////8/////////9/////////C/////
 // Implementation of abstract base class for all Subject objects
 
-// Export a stable profile identifier without exposing EDataLabel in exportTypes.hpp.
+// ownLabel is the compiled equipment/model identity (for example,
+// Subject_vav_pressIndep_hwReheat).  Export it as text so REST clients can
+// key on the model without depending on libEA's internal enum type.
 static std::string SubjectLabelId( EDataLabel label ) {
 
    switch( label ) {
@@ -87,6 +89,9 @@ ASubject::~ASubject( void ) { }
 GuiPackSubjectBasic_t ASubject::SayBasicGuiPack( void ) const {
 
    // *** TBD to include Subject's const params as additional 'infoLines'
+   // This pack is the REST layer's subject metadata source: model id
+   // (ownLabel), display name (ownName), display label (ownLabel tag), and
+   // child object keys all cross the libEA/API boundary here.
 
    return SGuiPackSubjectBasic(  LookUpGuiType( ownApiType ),
                                  ownGuiKey,

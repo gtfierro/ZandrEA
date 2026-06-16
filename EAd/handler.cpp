@@ -882,6 +882,8 @@ const json::value handler::json_subject(const NGuiKey & key, bool recurse) {
    obj[U("key")] = json_key(key);
    try {
       obj[U("idtext")] = json_string(p_Port->SayTextIdentifyingSubject(key));
+      // SayInfoFromSubject carries the subject metadata exported by
+      // ASubject::SayBasicGuiPack(): model label id, display name, and child keys.
       GuiPackSubjectBasic_t s = p_Port->SayInfoFromSubject(key);
       obj[U("reply")] = json_reply(s.getterReply);
       obj[U("domain")] = json_key(s.hostDomainKey);
@@ -930,6 +932,8 @@ const json::value handler::json_subject(const NGuiKey & key, bool recurse) {
          obj[U("casekeys")][i++] = json_key(ckey);
       }
       i = 0;
+      // Point order is owned by the controller/tool registration path, not the
+      // subject GUI pack. Keep this separate so clients can see the write contract.
       auto points = p_Port->SayInputPointNameOrderExpectedBySubject(key);
       for (auto const& p : points) {
          obj[U("points")][i++] = json_pointname(p);
@@ -958,8 +962,14 @@ const json::value handler::json_profiles(void) {
    int subject_i = 0;
    for (auto const& skey : domain.subjectKeys) {
       try {
+         // Metadata breadcrumb 1: subject keys come from the domain; each key is
+         // dereferenced here into the exported subject pack from libEA.
          GuiPackSubjectBasic_t subject = p_Port->SayInfoFromSubject(skey);
+         // Metadata breadcrumb 2: the ordered input contract comes from the
+         // controller's BAS-point registration for this subject.
          auto points = p_Port->SayInputPointNameOrderExpectedBySubject(skey);
+         // Metadata breadcrumb 3: ownLabelId is derived from the subject's
+         // compiled EDataLabel; label/name are UI text for humans.
          auto label_id = subject.ownLabelId;
          auto label = subject.infoText_byCR.empty() ? std::string("") : subject.infoText_byCR[0];
          auto name = subject.ownNameText;
@@ -972,6 +982,9 @@ const json::value handler::json_profiles(void) {
             }
          }
          if (profile_id.empty()) {
+            // The label id is the preferred stable profile id. If libEA ever
+            // exposes the same model label with a different point contract,
+            // suffix the duplicate rather than merging incompatible profiles.
             profile_id = label_id;
             for (auto const& profile : profiles) {
                if (profile.id == profile_id) {
