@@ -12,12 +12,15 @@
 #include <iostream>
 #include <string>
 #include <regex>
+#include <stdexcept>
 #include <algorithm>
 #include <ctime>
 #include <memory>
 #include <mutex>
 #include <sstream>
 #include <set>
+#include <map>
+#include <unordered_set>
 
 //#include <boost/iostreams/filtering_stream.hpp>
 //#include <boost/iostreams/filtering_streambuf.hpp>
@@ -686,9 +689,8 @@ inline static const json::value json_objtype(const EGuiType & t) {
    return(json_string(s));
 }
 
-// return a json object with a string value
 // these mappings came out of the EAwin32Client code
-inline static const json::value json_pointname(const EPointName & t) {
+inline static const std::string pointname_string(const EPointName & t) {
    std::string s = "UNKNOWN";
    switch(t) {
       case EPointName::Undefined:                        s = "Undefined";                          break;
@@ -722,9 +724,152 @@ inline static const json::value json_pointname(const EPointName & t) {
       case EPointName::Temperature_air_zone:             s = "Temperature_air_zone";               break;
       case EPointName::Temperature_air_zone_setpt_clg:   s = "Temperature_air_zone_setpt_clg";     break;
       case EPointName::Temperature_air_zone_setpt_htg:   s = "Temperature_air_zone_setpt_htg";     break;
+      case EPointName::Temperature_glycol_leaving:       s = "Temperature_glycol_leaving";         break;
+      case EPointName::Temperature_glycol_leaving_setpt: s = "Temperature_glycol_leaving_setpt";   break;
+      case EPointName::Temperature_water_leaving:        s = "Temperature_water_leaving";          break;
 
    }
-   return(json_string(s));
+   return(s);
+}
+
+// return a json object with a string value
+inline static const json::value json_pointname(const EPointName & t) {
+   return(json_string(pointname_string(t)));
+}
+
+inline static void set_string_array(json::value& obj, const utility::string_t& key, const std::vector<std::string>& values) {
+   obj[key] = json::value::array();
+   int i = 0;
+   for (auto const& value : values) {
+      obj[key][i++] = json_string(value);
+   }
+}
+
+static bool parse_sample_values_for_subject(
+   const json::value& values,
+   const std::vector<EPointName>& points,
+   uint64_t subjectkey,
+   std::vector<double>& dlist,
+   json::value& reply)
+{
+   dlist.clear();
+
+   if (points.empty()) {
+      stringstream msg;
+      msg << U("subject ") << subjectkey << U(" has no registered input points");
+      reply[U("error")] = json::value(msg.str());
+      reply[U("returncode")] = json_reply(EGuiReply::FAIL_set_givenContainerWrongSizeForKeyGiven);
+      return false;
+   }
+
+   if (values.is_array()) {
+      auto a = values.as_array();
+      int count = a.size();
+      if (points.size() != count) {
+         stringstream msg;
+         msg << U("channel count out of range for subject ") << subjectkey
+             << U(": expected ") << points.size() << U(", got ") << count;
+         reply[U("error")] = json::value(msg.str());
+         reply[U("returncode")] = json_reply(EGuiReply::FAIL_set_givenContainerWrongSizeForKeyGiven);
+         return false;
+      }
+      try {
+         for (auto const& v : a) {
+            if (!v.is_number()) {
+               throw std::runtime_error("non-numeric value");
+            }
+            dlist.push_back(v.as_double());
+         }
+      } catch (...) {
+         stringstream msg;
+         msg << U("Invalid value type likely due to non-numeric data for subject ") << subjectkey;
+         reply[U("error")] = json::value(msg.str());
+         reply[U("returncode")] = json_reply(EGuiReply::FAIL_set_givenValueOutOfRangeAllowed);
+         return false;
+      }
+      return true;
+   }
+
+   if (!values.is_object()) {
+      stringstream msg;
+      msg << U("values parameter for subject ") << subjectkey
+          << U(" must be an object keyed by point name or an array of doubles");
+      reply[U("error")] = json::value(msg.str());
+      reply[U("returncode")] = json_reply(EGuiReply::FAIL_set_givenValueOutOfRangeAllowed);
+      return false;
+   }
+
+   const auto value_obj = values.as_object();
+   std::unordered_set<std::string> expected;
+   std::vector<std::string> missing;
+   std::vector<std::string> nonnumeric;
+   std::vector<std::string> unknown;
+
+   for (auto const& point : points) {
+      expected.insert(pointname_string(point));
+   }
+
+   for (auto const& kv : value_obj) {
+      auto key = utility::conversions::to_utf8string(kv.first);
+      if (expected.count(key) == 0) {
+         unknown.push_back(key);
+      }
+   }
+
+   for (auto const& point : points) {
+      auto name = pointname_string(point);
+      auto key = utility::conversions::to_string_t(name);
+      auto iter = value_obj.find(key);
+      if (iter == value_obj.end()) {
+         missing.push_back(name);
+         continue;
+      }
+      if (!iter->second.is_number()) {
+         nonnumeric.push_back(name);
+         continue;
+      }
+      try {
+         dlist.push_back(iter->second.as_double());
+      } catch (...) {
+         nonnumeric.push_back(name);
+      }
+   }
+
+   if (!missing.empty() || !nonnumeric.empty() || !unknown.empty()) {
+      stringstream msg;
+      msg << U("invalid named values for subject ") << subjectkey;
+      if (!missing.empty()) {
+         msg << U("; missing required point(s)");
+      }
+      if (!nonnumeric.empty()) {
+         msg << U("; non-numeric point value(s)");
+      }
+      if (!unknown.empty()) {
+         msg << U("; unknown point name(s)");
+      }
+      reply[U("error")] = json::value(msg.str());
+      reply[U("returncode")] = json_reply(EGuiReply::FAIL_set_givenValueOutOfRangeAllowed);
+      set_string_array(reply, U("missing"), missing);
+      set_string_array(reply, U("nonnumeric"), nonnumeric);
+      set_string_array(reply, U("unknown"), unknown);
+      std::vector<std::string> expected_names;
+      for (auto const& point : points) {
+         expected_names.push_back(pointname_string(point));
+      }
+      set_string_array(reply, U("expected"), expected_names);
+      return false;
+   }
+
+   return true;
+}
+
+static const json::value json_pointname_array(const std::vector<EPointName>& points) {
+   auto obj = json::value::array();
+   int i = 0;
+   for (auto const& point : points) {
+      obj[i++] = json_pointname(point);
+   }
+   return obj;
 }
 
 
@@ -739,6 +884,7 @@ const json::value handler::json_subject(const NGuiKey & key, bool recurse) {
       obj[U("reply")] = json_reply(s.getterReply);
       obj[U("domain")] = json_key(s.hostDomainKey);
       obj[U("label")] = json_string(s.infoText_byCR[0]);
+      obj[U("label_id")] = json_string(s.ownLabelId);
       obj[U("info")] = json::value::array();
       int i = 0;
       for (auto const & t : s.infoText_byCR) {
@@ -790,6 +936,73 @@ const json::value handler::json_subject(const NGuiKey & key, bool recurse) {
       obj[U("error")] = json_string("Error fetching subject static info");
    }
    return(obj);
+}
+
+const json::value handler::json_profiles(void) {
+   json::value obj;
+   struct ProfileInfo {
+      std::string id;
+      std::string label_id;
+      std::string label;
+      std::vector<EPointName> points;
+   };
+   std::vector<ProfileInfo> profiles;
+
+   obj[U("schema")] = json_string("zandrea.subject-profiles.v1");
+   obj[U("profiles")] = json::value::array();
+   obj[U("subjects")] = json::value::array();
+   int subject_i = 0;
+   for (auto const& skey : domain.subjectKeys) {
+      try {
+         GuiPackSubjectBasic_t subject = p_Port->SayInfoFromSubject(skey);
+         auto points = p_Port->SayInputPointNameOrderExpectedBySubject(skey);
+         auto label_id = subject.ownLabelId;
+         auto label = subject.infoText_byCR.empty() ? std::string("") : subject.infoText_byCR[0];
+         auto name = subject.ownNameText;
+         std::string profile_id;
+
+         for (auto const& profile : profiles) {
+            if (profile.label_id == label_id && profile.points == points) {
+               profile_id = profile.id;
+               break;
+            }
+         }
+         if (profile_id.empty()) {
+            profile_id = label_id;
+            for (auto const& profile : profiles) {
+               if (profile.id == profile_id) {
+                  stringstream profile_name;
+                  profile_name << profile_id << "_" << (profiles.size() + 1);
+                  profile_id = profile_name.str();
+                  break;
+               }
+            }
+            profiles.push_back({ profile_id, label_id, label, points });
+         }
+
+         obj[U("subjects")][subject_i][U("key")] = json_key(skey);
+         obj[U("subjects")][subject_i][U("name")] = json_string(name);
+         obj[U("subjects")][subject_i][U("idtext")] = json_string(p_Port->SayTextIdentifyingSubject(skey));
+         obj[U("subjects")][subject_i][U("profile")] = json_string(profile_id);
+         obj[U("subjects")][subject_i][U("label")] = json_string(label);
+         obj[U("subjects")][subject_i][U("label_id")] = json_string(label_id);
+         obj[U("subjects")][subject_i][U("points")] = json_pointname_array(points);
+         subject_i++;
+      } catch (...) {
+         // Skip malformed subjects; existing /subjects endpoint carries detailed object errors.
+      }
+   }
+
+   int profile_i = 0;
+   for (auto const& profile : profiles) {
+      obj[U("profiles")][profile_i][U("id")] = json_string(profile.id);
+      obj[U("profiles")][profile_i][U("label_id")] = json_string(profile.label_id);
+      obj[U("profiles")][profile_i][U("label")] = json_string(profile.label);
+      obj[U("profiles")][profile_i][U("points")] = json_pointname_array(profile.points);
+      profile_i++;
+   }
+
+   return obj;
 }
 
 // fill in a json object reference with case data
@@ -1342,6 +1555,11 @@ void handler::handle_get(http_request message)
          auto funcname = U("SaySubjectKeys");
          reply[U("subjectkeys")] = json_array(domain.subjectKeys);
 
+      } else if (path == U("/profiles")) {
+         auto funcname = U("SaySubjectProfiles");
+         json_object_merge(reply, handler::json_profiles());
+         compress = true;
+
       } else if (path == U("/subjects")) {
          auto funcname = U("SaySubjects");
          reply[U("subjects")] = json::value::array();
@@ -1525,49 +1743,30 @@ void handler::handle_put(http_request message)
          if (handler::get_json_value(false, jvalue, querystringmap, U("subject"), reply, subjectkey) &&
             handler::get_json_value(false, jvalue, querystringmap, U("values"), values)) {
             NGuiKey subject(subjectkey);
-            if (values.is_array()) {
-               auto a = values.as_array();
-               // a is now a json::value::array (hopefully of doubles)
-               int count = a.size();
-               if (count > 0 && count < 10000) {  // MAXIMUM 9999 values accepted in a sample (make into a constant!)
-                  // WARNING: dlist gets freed at end of block, so if Dan's code isn't
-                  // making a copy of it there WILL be problems!
-                  std::vector<double> dlist;
-                  try {
-                     for (auto const& v : a) {
-                        dlist.push_back(v.as_double());
-                     }
-                  } catch (...) {
-                     stringstream msg;
-                     msg << U("Invalid value type likely due to non-numeric data");
-                     ucout << msg.str() << endl;
-                     reply[U("error")] = json::value(msg.str());
-                     reply[U("returncode")] = json::value(-1);
-                     retval = status_codes::BadRequest;
-                     goto done;
-                  }
-                  TRYAPI1(values,
-                     p_Port->SetCoincidentInputsForSubject(dlist, subject);
-                     update_seq();
-                     stringstream msg;
-                     msg << U("added sample of ") << count << U(" channels");
-                     reply[U("returncode")] = json::value(0);
-                     reply[U("status")] = json::value(msg.str());
-                  );
-               } else {
-                  stringstream msg;
-                  msg << U("channel count out of range");
-                  ucout << funcname << U(": ") << msg.str() << endl;
-                  reply[U("error")] = json::value(msg.str());
-                  reply[U("returncode")] = json::value(-1);
-                  retval = status_codes::BadRequest;
-               }
-            } else {
+            std::vector<EPointName> points;
+            try {
+               points = p_Port->SayInputPointNameOrderExpectedBySubject(subject);
+            } catch (...) {
                stringstream msg;
-               msg << U("values parameter must be array of doubles");
+               msg << U("invalid subject key ") << subjectkey;
                ucout << funcname << U(": ") << msg.str() << endl;
                reply[U("error")] = json::value(msg.str());
-               reply[U("returncode")] = json::value(-1);
+               reply[U("returncode")] = json_reply(EGuiReply::FAIL_any_givenKeyNotValidForFunctionCalled);
+               retval = status_codes::BadRequest;
+               goto done;
+            }
+            std::vector<double> dlist;
+            if (parse_sample_values_for_subject(values, points, subjectkey, dlist, reply)) {
+               TRYAPI1(values,
+                  p_Port->SetCoincidentInputsForSubject(dlist, subject);
+                  update_seq();
+                  stringstream msg;
+                  msg << U("added sample of ") << dlist.size() << U(" channels");
+                  reply[U("returncode")] = json_reply(EGuiReply::OKAY_allDone);
+                  reply[U("status")] = json::value(msg.str());
+               );
+            } else {
+               ucout << funcname << U(": ") << reply[U("error")].as_string() << endl;
                retval = status_codes::BadRequest;
             }
          } else {
@@ -1599,51 +1798,64 @@ void handler::handle_put(http_request message)
                for (const auto & json_o : valuesbysubject.as_array()) {
                   // json_o is a json object with properties "subject" and "values"
                   uint64_t subjectkey = 0;
-                  try { subjectkey = json_o.at(U("subject")).as_integer(); } catch (...) { /* NEED ERROR MESSAGE HERE */ continue; };
-                  NGuiKey subject(subjectkey);
-                  auto points = p_Port->SayInputPointNameOrderExpectedBySubject(subject);
+                  if (!json_o.is_object()) {
+                     stringstream msg;
+                     msg << U("values_by_subject entries must be objects with subject and values parameters");
+                     ucout << funcname << U(": ") << msg.str() << endl;
+                     reply[U("error")] = json::value(msg.str());
+                     reply[U("returncode")] = json_reply(EGuiReply::FAIL_set_givenValueOutOfRangeAllowed);
+                     retval = status_codes::BadRequest;
+                     goto done;
+                  }
                   try {
-                     auto a = json_o.at(U("values")).as_array();
-                     int count = a.size();
-                     // TODO: We don't currently have any way to validate the point names
-                     // (But for now we can at least validate the number of points matches
-                     // what is expected by this subject)
-                     if (points.size() == count && count > 0) {
-                        // WARNING: dlist gets freed at end of block, so if Dan's code isn't
-                        // making a copy of it there WILL be problems!
-                        std::vector<double> dlist;
-                        try {
-                           for (auto const& v : a) {
-                              dlist.push_back(v.as_double());
-                           }
-                        } catch (...) {
-                           stringstream msg;
-                           msg << U("Invalid value type likely due to non-numeric data");
-                           ucout << msg.str() << endl;
-                           reply[U("error")] = json::value(msg.str());
-                           reply[U("returncode")] = json_reply(EGuiReply::FAIL_set_givenValueOutOfRangeAllowed);
-                           retval = status_codes::BadRequest;
-                           goto done;
-                        }
-                        TRYAPI1(valuesbysubject,
-                           p_Port->SetCoincidentInputsForSubject(dlist, subject);
-                           stringstream msg;
-                           msg << U("added sample of ") << count << U(" channels to subject ") << subjectkey;
-                           reply[U("returncode")] = json_reply(EGuiReply::OKAY_allDone);
-                           reply[U("status")] = json::value(msg.str());
-                        );
-                     } else {
-                        stringstream msg;
-                        msg << U("channel count out of range for subject ") << subjectkey;
-                        ucout << funcname << U(": ") << msg.str() << endl;
-                        reply[U("error")] = json::value(msg.str());
-                        reply[U("returncode")] = json_reply(EGuiReply::FAIL_set_givenContainerWrongSizeForKeyGiven);
-                        retval = status_codes::BadRequest;
-                     }
+                     subjectkey = json_o.at(U("subject")).as_number().to_uint64();
                   } catch (...) {
-                     /* NEED ERROR MESSAGE HERE */
-                     continue;
+                     stringstream msg;
+                     msg << U("subject parameter missing or invalid in values_by_subject entry");
+                     ucout << funcname << U(": ") << msg.str() << endl;
+                     reply[U("error")] = json::value(msg.str());
+                     reply[U("returncode")] = json_reply(EGuiReply::FAIL_any_givenKeyNotValidForFunctionCalled);
+                     retval = status_codes::BadRequest;
+                     goto done;
                   };
+                  NGuiKey subject(subjectkey);
+                  std::vector<EPointName> points;
+                  try {
+                     points = p_Port->SayInputPointNameOrderExpectedBySubject(subject);
+                  } catch (...) {
+                     stringstream msg;
+                     msg << U("invalid subject key ") << subjectkey;
+                     ucout << funcname << U(": ") << msg.str() << endl;
+                     reply[U("error")] = json::value(msg.str());
+                     reply[U("returncode")] = json_reply(EGuiReply::FAIL_any_givenKeyNotValidForFunctionCalled);
+                     retval = status_codes::BadRequest;
+                     goto done;
+                  };
+                  json::value values;
+                  try {
+                     values = json_o.at(U("values"));
+                  } catch (...) {
+                     stringstream msg;
+                     msg << U("values parameter missing for subject ") << subjectkey;
+                     ucout << funcname << U(": ") << msg.str() << endl;
+                     reply[U("error")] = json::value(msg.str());
+                     reply[U("returncode")] = json_reply(EGuiReply::FAIL_set_givenValueOutOfRangeAllowed);
+                     retval = status_codes::BadRequest;
+                     goto done;
+                  }
+                  std::vector<double> dlist;
+                  if (!parse_sample_values_for_subject(values, points, subjectkey, dlist, reply)) {
+                     ucout << funcname << U(": ") << reply[U("error")].as_string() << endl;
+                     retval = status_codes::BadRequest;
+                     goto done;
+                  }
+                  TRYAPI1(valuesbysubject,
+                     p_Port->SetCoincidentInputsForSubject(dlist, subject);
+                     stringstream msg;
+                     msg << U("added sample of ") << dlist.size() << U(" channels to subject ") << subjectkey;
+                     reply[U("returncode")] = json_reply(EGuiReply::OKAY_allDone);
+                     reply[U("status")] = json::value(msg.str());
+                  );
                } // end foreach(subject)
 
             } else {
