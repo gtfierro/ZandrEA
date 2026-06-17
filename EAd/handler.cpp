@@ -754,30 +754,6 @@ static const json::value json_pointname_array(const std::vector<EPointName>& poi
    return obj;
 }
 
-static std::string profile_contract_hash(const std::string& label_id, const std::vector<EPointName>& points) {
-   // Hash the stable pieces of a profile contract: model label plus ordered
-   // public point names. This keeps duplicate-label profile ids stable by content.
-   uint32_t hash = 2166136261u;
-   auto update_hash = [&hash](const std::string& value) {
-      for (auto c : value) {
-         hash ^= static_cast<unsigned char>(c);
-         hash *= 16777619u;
-      }
-      hash ^= 0xffu;
-      hash *= 16777619u;
-   };
-
-   update_hash(label_id);
-   for (auto const& point : points) {
-      update_hash(utility::conversions::to_utf8string(json_pointname(point).as_string()));
-   }
-
-   stringstream ss;
-   ss << std::hex << std::setw(8) << std::setfill('0') << hash;
-   return ss.str();
-}
-
-
 // fill in a json object reference with subject data
 const json::value handler::json_subject(const NGuiKey & key, bool recurse) {
    json::value obj;
@@ -849,16 +825,11 @@ const json::value handler::json_subject(const NGuiKey & key, bool recurse) {
 
 const json::value handler::json_profiles(void) {
    json::value obj;
-   // A profile groups subjects that share a model label and the same ordered
-   // input points, letting clients send named values without hard-coding order.
-   struct ProfileInfo {
-      std::string id;
-      std::string label_id;
-      std::string label;
-      std::vector<EPointName> points;
-   };
-   std::vector<ProfileInfo> profiles;
-
+   // A profile is one subject type's write contract: the model label plus the
+   // ordered input points clients send values for. It is keyed by label_id, which
+   // already identifies the contract uniquely -- every subject of a given type
+   // registers the same points in the same order -- so no synthesized id is
+   // needed and subjects join to their profile by label_id directly.
    obj[U("profiles")] = json::value::object();
    obj[U("subjects")] = json::value::array();
    int subject_i = 0;
@@ -872,30 +843,14 @@ const json::value handler::json_profiles(void) {
          auto label_id = subject.ownLabelId;
          auto label = subject.infoText_byCR.empty() ? std::string("") : subject.infoText_byCR[0];
          auto name = subject.ownNameText;
-         std::string profile_id;
 
-         // Reuse an existing profile when both the model label and point order
-         // match. Same label with different inputs gets a distinct profile id.
-         for (auto const& profile : profiles) {
-            if (profile.label_id == label_id && profile.points == points) {
-               profile_id = profile.id;
-               break;
-            }
-         }
-         // No existing profile matched, so create one. The common id is the
-         // label_id; duplicate labels get a deterministic suffix from the
-         // ordered point contract 
-         if (profile_id.empty()) {
-            profile_id = label_id;
-            for (auto const& profile : profiles) {
-               if (profile.id == profile_id) {
-                  stringstream profile_name;
-                  profile_name << profile_id << "_" << profile_contract_hash(label_id, points);
-                  profile_id = profile_name.str();
-                  break;
-               }
-            }
-            profiles.push_back({ profile_id, label_id, label, points });
+         // Emit the de-duplicated profile once per label_id; later subjects of the
+         // same type simply reference it.
+         auto profile_key = utility::conversions::to_string_t(label_id);
+         if (!obj[U("profiles")].has_field(profile_key)) {
+            obj[U("profiles")][profile_key][U("label_id")] = json_string(label_id);
+            obj[U("profiles")][profile_key][U("label")] = json_string(label);
+            obj[U("profiles")][profile_key][U("points")] = json_pointname_array(points);
          }
 
          // The subject list maps concrete subject keys to their profile and
@@ -903,7 +858,7 @@ const json::value handler::json_profiles(void) {
          obj[U("subjects")][subject_i][U("key")] = json_key(skey);
          obj[U("subjects")][subject_i][U("name")] = json_string(name);
          obj[U("subjects")][subject_i][U("idtext")] = json_string(p_Port->SayTextIdentifyingSubject(skey));
-         obj[U("subjects")][subject_i][U("profile")] = json_string(profile_id);
+         obj[U("subjects")][subject_i][U("profile")] = json_string(label_id);
          obj[U("subjects")][subject_i][U("label")] = json_string(label);
          obj[U("subjects")][subject_i][U("label_id")] = json_string(label_id);
          obj[U("subjects")][subject_i][U("points")] = json_pointname_array(points);
@@ -911,14 +866,6 @@ const json::value handler::json_profiles(void) {
       } catch (...) {
          // Existing subject endpoints expose per-object errors; profiles skip malformed subjects.
       }
-   }
-
-   for (auto const& profile : profiles) {
-      // Profile entries are the de-duplicated write contracts clients can cache.
-      auto profile_key = utility::conversions::to_string_t(profile.id);
-      obj[U("profiles")][profile_key][U("label_id")] = json_string(profile.label_id);
-      obj[U("profiles")][profile_key][U("label")] = json_string(profile.label);
-      obj[U("profiles")][profile_key][U("points")] = json_pointname_array(profile.points);
    }
 
    return obj;
