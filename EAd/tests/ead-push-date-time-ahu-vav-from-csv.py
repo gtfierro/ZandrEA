@@ -91,13 +91,6 @@ validated against the backend /profiles document before upload.
     cli.add_argument(
         "filenames", help="Name of the CSV file(s) to load (- for stdin)", nargs="+"
     )
-    cli.add_argument(
-        "-a",
-        "--ahu-count",
-        help="Deprecated; kept for compatibility. Header names now drive AHU discovery.",
-        type=int,
-        default=None,
-    )
     cli.add_argument("-l", "--loop", help="Repeat forever", action="store_true")
     cli.add_argument(
         "-i", "--interval", help="Time to pause between samples", type=int, default=0
@@ -203,7 +196,10 @@ class RestClient:
 
 def discover_subjects_from_profiles(profile_doc):
     subjects = {}
-    profile_ids = {profile.get("id") for profile in profile_doc.get("profiles", [])}
+    profiles = profile_doc.get("profiles", {})
+    if not isinstance(profiles, dict):
+        raise RuntimeError("/profiles response did not provide a profiles object")
+    profile_ids = set(profiles)
     for subject in profile_doc.get("subjects", []):
         profile = subject.get("profile")
         if profile not in profile_ids:
