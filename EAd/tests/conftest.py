@@ -18,15 +18,23 @@ def _base_url():
 
 @pytest.fixture(scope="session")
 def base_url():
-    """Session-scoped base URL for the REST API."""
+    """Base URL for the REST API, resolved once per session.
+
+    Reads EA_BASEURL (or EA_PROTO/EA_HOST/EA_PORT) from the environment so
+    tests can target a native daemon, a Docker container, or any other server.
+    Use this fixture as the starting point for every request in a test.
+    """
     return _base_url()
 
 
 @pytest.fixture(scope="session")
 def ead_ready(base_url):
-    """Ensure the ead daemon is reachable before running tests.
+    """Guard fixture that fails fast if the ead daemon is not running.
 
-    Raises RuntimeError if the server does not respond within a few seconds.
+    Hits GET /noop once at the start of the session.  Any test that depends
+    on a live server should list ead_ready (or another fixture that
+    transitively depends on it) so pytest aborts the whole run with a clear
+    message instead of flailing through dozens of connection errors.
     """
     try:
         resp = requests.get(f"{base_url}/noop", timeout=5)
@@ -41,7 +49,13 @@ def ead_ready(base_url):
 
 @pytest.fixture
 def subject_keys(base_url, ead_ready):
-    """Return the list of configured subject keys from the domain."""
+    """List of subject keys currently configured in the libEA domain.
+
+    Fetched from GET /subjectkeys on every use (function-scoped) so tests
+    that mutate the domain see the latest state.  Use this fixture when a
+    test needs a real subject key to exercise write endpoints or to skip
+    gracefully when the domain has no subjects configured.
+    """
     resp = requests.get(f"{base_url}/subjectkeys", timeout=10)
     resp.raise_for_status()
     data = resp.json()
