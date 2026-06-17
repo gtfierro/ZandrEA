@@ -859,8 +859,7 @@ const json::value handler::json_profiles(void) {
    };
    std::vector<ProfileInfo> profiles;
 
-   obj[U("schema")] = json_string("zandrea.subject-profiles.v1");
-   obj[U("profiles")] = json::value::array();
+   obj[U("profiles")] = json::value::object();
    obj[U("subjects")] = json::value::array();
    int subject_i = 0;
    for (auto const& skey : domain.subjectKeys) {
@@ -914,14 +913,12 @@ const json::value handler::json_profiles(void) {
       }
    }
 
-   int profile_i = 0;
    for (auto const& profile : profiles) {
       // Profile entries are the de-duplicated write contracts clients can cache.
-      obj[U("profiles")][profile_i][U("id")] = json_string(profile.id);
-      obj[U("profiles")][profile_i][U("label_id")] = json_string(profile.label_id);
-      obj[U("profiles")][profile_i][U("label")] = json_string(profile.label);
-      obj[U("profiles")][profile_i][U("points")] = json_pointname_array(profile.points);
-      profile_i++;
+      auto profile_key = utility::conversions::to_string_t(profile.id);
+      obj[U("profiles")][profile_key][U("label_id")] = json_string(profile.label_id);
+      obj[U("profiles")][profile_key][U("label")] = json_string(profile.label);
+      obj[U("profiles")][profile_key][U("points")] = json_pointname_array(profile.points);
    }
 
    return obj;
