@@ -22,10 +22,14 @@ ENVFILE ?= production.env
 -include ${ENVFILE}
 DOCKER_REGISTRY ?= 
 DOCKER_PROJECT ?= zandrea
-DOCKER_IMAGE_PREFIX ?= 
+DOCKER_IMAGE_PREFIX ?=
 DOCKER_IMAGE_SUFFIX ?= _prod
 
-.PHONY:	all _all compile build build-ead rebuild recompile clean test docker-build docker-rerun docker-up docker-down docker-status docker-prune docker-rm-kb docker-retest docker-production-build docker-production-up docker-production-down docker-production-retest docker-production-save docker-production-push jscli pushtestdata install reinstall compiler dist-clean
+# Podman (rootless) uses a dedicated compose file that swaps Traefik for nginx
+# (no docker.sock mount) and replaces legacy "links:" with network aliases.
+PODMAN_COMPOSE ?= podman compose -f docker-compose.podman.yml
+
+.PHONY:	all _all compile build build-ead rebuild recompile clean test pytest docker-build docker-rerun docker-up docker-down docker-status docker-prune docker-rm-kb docker-retest docker-production-build docker-production-up docker-production-down docker-production-retest docker-production-save docker-production-push podman-build podman-up podman-down podman-rerun podman-status jscli pushtestdata install reinstall compiler dist-clean
 
 # (SWB) I commented out .NOTPARALLEL because I discovered the .WAIT special target. (May be
 # specific only to GNU make...?)  This gives better control over dependency processing than
@@ -136,6 +140,23 @@ docker-debug:
 
 docker-down:
 	-docker compose down
+
+# Rootless-podman equivalents of the docker-* targets above. They use the
+# podman compose file, so no Traefik/docker.sock and no "links:". The bacnet
+# service is gated behind a compose profile; add it with: --profile bacnet
+podman-build:
+	$(PODMAN_COMPOSE) build
+
+podman-up:
+	$(PODMAN_COMPOSE) up --build --detach
+
+podman-down:
+	-$(PODMAN_COMPOSE) down
+
+podman-status:
+	$(PODMAN_COMPOSE) ps
+
+podman-rerun:	podman-down .WAIT podman-up
 
 docker-rerun:	docker-down .WAIT docker-up
 
@@ -491,6 +512,9 @@ jscli:
 
 pushtestdata:
 	(cd EAd/tests && sleep 5 && $(MAKE) pushtestdata)
+
+pytest:
+	(cd EAd/tests && $(MAKE) pytest)
 
 rebuild:	reinstall 
 
