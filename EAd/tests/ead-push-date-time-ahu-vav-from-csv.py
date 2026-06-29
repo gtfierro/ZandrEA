@@ -85,7 +85,7 @@ def parse_args():
         description="Push IBAL AHU/VAV CSV samples to the EA REST server.",
         epilog="""
 CSV columns are mapped by this driver to subject names and point names, then
-validated against the backend /profiles document before upload.
+validated against the backend /contracts document before upload.
 """,
     )
     cli.add_argument(
@@ -143,7 +143,7 @@ validated against the backend /profiles document before upload.
     cli.add_argument(
         "--dry-run",
         action="store_true",
-        help="Validate through /profiles and print payloads without uploading samples",
+        help="Validate through /contracts and print payloads without uploading samples",
     )
     cli.add_argument(
         "--max-rows",
@@ -178,8 +178,8 @@ class RestClient:
             )
         return response
 
-    def get_profiles(self):
-        return self.request("GET", "/profiles").json()
+    def get_contracts(self):
+        return self.request("GET", "/contracts").json()
 
     def sample_time_step(self, timestamp, values_by_subject):
         body = {"time": timestamp, "values_by_subject": values_by_subject}
@@ -201,25 +201,28 @@ class RestClient:
         ).json()
 
 
-def discover_subjects_from_profiles(profile_doc):
+def discover_subjects_from_contracts(contract_doc):
     subjects = {}
-    profile_ids = {profile.get("id") for profile in profile_doc.get("profiles", [])}
-    for subject in profile_doc.get("subjects", []):
-        profile = subject.get("profile")
-        if profile not in profile_ids:
+    contracts_by_id = {
+        contract.get("id"): contract for contract in contract_doc.get("contracts", [])
+    }
+    for subject in contract_doc.get("subjects", []):
+        contract_id = subject.get("contract")
+        contract = contracts_by_id.get(contract_id)
+        if contract is None:
             print(
                 f"WARNING: subject {subject.get('key')} ({subject.get('name')}) "
-                f"uses unsupported profile {profile}"
+                f"uses unsupported contract {contract_id}"
             )
             continue
         name = subject.get("name")
         if name:
-            subjects[name] = subject
+            subjects[name] = {"subject": subject, "contract": contract}
         print(
-            f"Subject {subject.get('key')} ({subject.get('name')}) uses profile {profile}"
+            f"Subject {subject.get('key')} ({subject.get('name')}) uses contract {contract_id}"
         )
     if not subjects:
-        raise RuntimeError("/profiles did not provide any subjects")
+        raise RuntimeError("/contracts did not provide any subjects")
     return subjects
 
 
@@ -240,16 +243,18 @@ def build_column_map(fieldnames, subjects_by_name):
             )
         subject_name = adapter["subject"]
         point = adapter["point"]
-        subject = subjects_by_name.get(subject_name)
-        if subject is None:
+        subject_contract = subjects_by_name.get(subject_name)
+        if subject_contract is None:
             raise ValueError(
                 f"CSV column {column!r} maps to subject {subject_name!r}, "
-                "but /profiles does not list that subject"
+                "but /contracts does not list that subject"
             )
-        if point not in subject.get("points", []):
+        subject = subject_contract["subject"]
+        contract = subject_contract["contract"]
+        if point not in contract.get("points", []):
             raise ValueError(
                 f"CSV column {column!r} maps to point {point!r}, but subject "
-                f"{subject_name!r} does not list that point in /profiles"
+                f"{subject_name!r} does not list that point in /contracts"
             )
         subject_key = subject["key"]
         column_map[column] = {"subject": subject, "point": point}
@@ -260,7 +265,7 @@ def build_column_map(fieldnames, subjects_by_name):
                 mapped_column
                 for mapped_column, mapped in CSV_COLUMN_MAP.items()
                 if mapped["subject"] == subject_name
-                and mapped["point"] in subject.get("points", [])
+                and mapped["point"] in contract.get("points", [])
             },
         )
 
@@ -401,13 +406,13 @@ def main():
     args = parse_args()
     client = RestClient(base_url(args))
 
-    profile_doc = client.get_profiles()
+    contract_doc = client.get_contracts()
     subjectkeys = [
         subject["key"]
-        for subject in profile_doc.get("subjects", [])
+        for subject in contract_doc.get("subjects", [])
         if "key" in subject
     ]
-    subjects_by_name = discover_subjects_from_profiles(profile_doc)
+    subjects_by_name = discover_subjects_from_contracts(contract_doc)
 
     override_timestamp = None
     if args.time == "now":

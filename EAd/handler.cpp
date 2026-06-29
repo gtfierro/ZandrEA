@@ -809,7 +809,7 @@ static bool parse_named_sample_values_for_subject(
 {
    dlist.clear();
 
-   // Named uploads are the self-describing write boundary.  The profile gives
+   // Named uploads are the self-describing write boundary.  The contract gives
    // clients these point names, and this method validates that payload before
    // normalizing it back to libEA's ordered vector of doubles.
    if (points.empty()) {
@@ -972,20 +972,19 @@ const json::value handler::json_subject(const NGuiKey & key, bool recurse) {
    return(obj);
 }
 
-const json::value handler::json_profiles(void) {
+const json::value handler::json_contracts(void) {
    json::value obj;
-   // Profiles are model contracts: subjects sharing the same libEA label id
-   // and expected point list share a profile. Source-specific names stay in clients.
-   struct ProfileInfo {
+   // Contracts describe the write boundary: subjects sharing the same label
+   // and expected point list share a contract. Source-specific names stay in clients.
+   struct ContractInfo {
       std::string id;
-      std::string label_id;
       std::string label;
       std::vector<EPointName> points;
    };
-   std::vector<ProfileInfo> profiles;
+   std::vector<ContractInfo> contracts;
 
-   obj[U("schema")] = json_string("zandrea.subject-profiles.v1");
-   obj[U("profiles")] = json::value::array();
+   obj[U("schema")] = json_string("zandrea.subject-contracts.v1");
+   obj[U("contracts")] = json::value::array();
    obj[U("subjects")] = json::value::array();
    int subject_i = 0;
    for (auto const& skey : domain.subjectKeys) {
@@ -996,55 +995,51 @@ const json::value handler::json_profiles(void) {
          // Metadata breadcrumb 2: the ordered input contract comes from the
          // controller's BAS-point registration for this subject.
          auto points = p_Port->SayInputPointNameOrderExpectedBySubject(skey);
-         // Metadata breadcrumb 3: ownLabelId is derived from the subject's
-         // compiled EDataLabel; label/name are UI text for humans.
-         auto label_id = subject.ownLabelId;
+         // Metadata breadcrumb 3: contract id and label are contract metadata
+         // derived from the subject's compiled EDataLabel. Subjects below only
+         // reference the contract id to keep a single source of truth.
+         auto preferred_contract_id = subject.ownLabelId;
          auto label = subject.infoText_byCR.empty() ? std::string("") : subject.infoText_byCR[0];
          auto name = subject.ownNameText;
-         std::string profile_id;
+         std::string contract_id;
 
-         for (auto const& profile : profiles) {
-            if (profile.label_id == label_id && profile.points == points) {
-               profile_id = profile.id;
+         for (auto const& contract : contracts) {
+            if (contract.label == label && contract.points == points) {
+               contract_id = contract.id;
                break;
             }
          }
-         if (profile_id.empty()) {
-            // The label id is the preferred stable profile id. If libEA ever
-            // exposes the same model label with a different point contract,
-            // suffix the duplicate rather than merging incompatible profiles.
-            profile_id = label_id;
-            for (auto const& profile : profiles) {
-               if (profile.id == profile_id) {
-                  stringstream profile_name;
-                  profile_name << profile_id << "_" << (profiles.size() + 1);
-                  profile_id = profile_name.str();
+         if (contract_id.empty()) {
+            // The model id is the preferred stable contract id. If libEA ever
+            // exposes the same model label with a different point list, suffix
+            // the duplicate rather than merging incompatible contracts.
+            contract_id = preferred_contract_id;
+            for (auto const& contract : contracts) {
+               if (contract.id == contract_id) {
+                  stringstream contract_name;
+                  contract_name << contract_id << "_" << (contracts.size() + 1);
+                  contract_id = contract_name.str();
                   break;
                }
             }
-            profiles.push_back({ profile_id, label_id, label, points });
+            contracts.push_back({ contract_id, label, points });
          }
 
          obj[U("subjects")][subject_i][U("key")] = json_key(skey);
          obj[U("subjects")][subject_i][U("name")] = json_string(name);
-         obj[U("subjects")][subject_i][U("idtext")] = json_string(p_Port->SayTextIdentifyingSubject(skey));
-         obj[U("subjects")][subject_i][U("profile")] = json_string(profile_id);
-         obj[U("subjects")][subject_i][U("label")] = json_string(label);
-         obj[U("subjects")][subject_i][U("label_id")] = json_string(label_id);
-         obj[U("subjects")][subject_i][U("points")] = json_pointname_array(points);
+         obj[U("subjects")][subject_i][U("contract")] = json_string(contract_id);
          subject_i++;
       } catch (...) {
          // Skip malformed subjects; existing /subjects endpoint carries detailed object errors.
       }
    }
 
-   int profile_i = 0;
-   for (auto const& profile : profiles) {
-      obj[U("profiles")][profile_i][U("id")] = json_string(profile.id);
-      obj[U("profiles")][profile_i][U("label_id")] = json_string(profile.label_id);
-      obj[U("profiles")][profile_i][U("label")] = json_string(profile.label);
-      obj[U("profiles")][profile_i][U("points")] = json_pointname_array(profile.points);
-      profile_i++;
+   int contract_i = 0;
+   for (auto const& contract : contracts) {
+      obj[U("contracts")][contract_i][U("id")] = json_string(contract.id);
+      obj[U("contracts")][contract_i][U("label")] = json_string(contract.label);
+      obj[U("contracts")][contract_i][U("points")] = json_pointname_array(contract.points);
+      contract_i++;
    }
 
    return obj;
@@ -1600,9 +1595,9 @@ void handler::handle_get(http_request message)
          auto funcname = U("SaySubjectKeys");
          reply[U("subjectkeys")] = json_array(domain.subjectKeys);
 
-      } else if (path == U("/profiles")) {
-         auto funcname = U("SaySubjectProfiles");
-         json_object_merge(reply, handler::json_profiles());
+      } else if (path == U("/contracts")) {
+         auto funcname = U("SaySubjectContracts");
+         json_object_merge(reply, handler::json_contracts());
          compress = true;
 
       } else if (path == U("/subjects")) {
