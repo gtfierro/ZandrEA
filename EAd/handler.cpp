@@ -1838,64 +1838,51 @@ void handler::handle_put(http_request message)
                for (const auto & json_o : valuesbysubject.as_array()) {
                   // json_o is a json object with properties "subject" and "values"
                   uint64_t subjectkey = 0;
-                  if (!json_o.is_object()) {
-                     stringstream msg;
-                     msg << U("values_by_subject entries must be objects with subject and values parameters");
-                     ucout << funcname << U(": ") << msg.str() << endl;
-                     reply[U("error")] = json::value(msg.str());
-                     reply[U("returncode")] = json_reply(EGuiReply::FAIL_set_givenValueOutOfRangeAllowed);
-                     retval = status_codes::BadRequest;
-                     goto done;
-                  }
-                  try {
-                     subjectkey = json_o.at(U("subject")).as_number().to_uint64();
-                  } catch (...) {
-                     stringstream msg;
-                     msg << U("subject parameter missing or invalid in values_by_subject entry");
-                     ucout << funcname << U(": ") << msg.str() << endl;
-                     reply[U("error")] = json::value(msg.str());
-                     reply[U("returncode")] = json_reply(EGuiReply::FAIL_any_givenKeyNotValidForFunctionCalled);
-                     retval = status_codes::BadRequest;
-                     goto done;
-                  };
+                  try { subjectkey = json_o.at(U("subject")).as_integer(); } catch (...) { /* NEED ERROR MESSAGE HERE */ continue; };
                   NGuiKey subject(subjectkey);
-                  std::vector<EPointName> points;
+                  auto points = p_Port->SayInputPointNameOrderExpectedBySubject(subject);
                   try {
-                     points = p_Port->SayInputPointNameOrderExpectedBySubject(subject);
+                     auto a = json_o.at(U("values")).as_array();
+                     int count = a.size();
+                     // TODO: We don't currently have any way to validate the point names
+                     // (But for now we can at least validate the number of points matches
+                     // what is expected by this subject)
+                     if (points.size() == count && count > 0) {
+                        // WARNING: dlist gets freed at end of block, so if Dan's code isn't
+                        // making a copy of it there WILL be problems!
+                        std::vector<double> dlist;
+                        try {
+                           for (auto const& v : a) {
+                              dlist.push_back(v.as_double());
+                           }
+                        } catch (...) {
+                           stringstream msg;
+                           msg << U("Invalid value type likely due to non-numeric data");
+                           ucout << msg.str() << endl;
+                           reply[U("error")] = json::value(msg.str());
+                           reply[U("returncode")] = json_reply(EGuiReply::FAIL_set_givenValueOutOfRangeAllowed);
+                           retval = status_codes::BadRequest;
+                           goto done;
+                        }
+                        TRYAPI1(valuesbysubject,
+                           p_Port->SetCoincidentInputsForSubject(dlist, subject);
+                           stringstream msg;
+                           msg << U("added sample of ") << count << U(" channels to subject ") << subjectkey;
+                           reply[U("returncode")] = json_reply(EGuiReply::OKAY_allDone);
+                           reply[U("status")] = json::value(msg.str());
+                        );
+                     } else {
+                        stringstream msg;
+                        msg << U("channel count out of range for subject ") << subjectkey;
+                        ucout << funcname << U(": ") << msg.str() << endl;
+                        reply[U("error")] = json::value(msg.str());
+                        reply[U("returncode")] = json_reply(EGuiReply::FAIL_set_givenContainerWrongSizeForKeyGiven);
+                        retval = status_codes::BadRequest;
+                     }
                   } catch (...) {
-                     stringstream msg;
-                     msg << U("invalid subject key ") << subjectkey;
-                     ucout << funcname << U(": ") << msg.str() << endl;
-                     reply[U("error")] = json::value(msg.str());
-                     reply[U("returncode")] = json_reply(EGuiReply::FAIL_any_givenKeyNotValidForFunctionCalled);
-                     retval = status_codes::BadRequest;
-                     goto done;
+                     /* NEED ERROR MESSAGE HERE */
+                     continue;
                   };
-                  json::value values;
-                  try {
-                     values = json_o.at(U("values"));
-                  } catch (...) {
-                     stringstream msg;
-                     msg << U("values parameter missing for subject ") << subjectkey;
-                     ucout << funcname << U(": ") << msg.str() << endl;
-                     reply[U("error")] = json::value(msg.str());
-                     reply[U("returncode")] = json_reply(EGuiReply::FAIL_set_givenValueOutOfRangeAllowed);
-                     retval = status_codes::BadRequest;
-                     goto done;
-                  }
-                  std::vector<double> dlist;
-                  if (!parse_legacy_sample_values_for_subject(values, points, subjectkey, dlist, reply)) {
-                     ucout << funcname << U(": ") << reply[U("error")].as_string() << endl;
-                     retval = status_codes::BadRequest;
-                     goto done;
-                  }
-                  TRYAPI1(valuesbysubject,
-                     p_Port->SetCoincidentInputsForSubject(dlist, subject);
-                     stringstream msg;
-                     msg << U("added sample of ") << dlist.size() << U(" channels to subject ") << subjectkey;
-                     reply[U("returncode")] = json_reply(EGuiReply::OKAY_allDone);
-                     reply[U("status")] = json::value(msg.str());
-                  );
                } // end foreach(subject)
 
             } else {
