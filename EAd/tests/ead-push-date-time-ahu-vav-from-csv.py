@@ -91,13 +91,6 @@ validated against the backend /contracts document before upload.
     cli.add_argument(
         "filenames", help="Name of the CSV file(s) to load (- for stdin)", nargs="+"
     )
-    cli.add_argument(
-        "-a",
-        "--ahu-count",
-        help="Deprecated; kept for compatibility. Header names now drive AHU discovery.",
-        type=int,
-        default=None,
-    )
     cli.add_argument("-l", "--loop", help="Repeat forever", action="store_true")
     cli.add_argument(
         "-i", "--interval", help="Time to pause between samples", type=int, default=0

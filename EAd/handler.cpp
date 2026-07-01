@@ -15,6 +15,7 @@
 #include <stdexcept>
 #include <algorithm>
 #include <ctime>
+#include <iomanip>
 #include <memory>
 #include <mutex>
 #include <sstream>
@@ -689,6 +690,7 @@ inline static const json::value json_objtype(const EGuiType & t) {
    return(json_string(s));
 }
 
+// return the public string used for a BAS point name
 // these mappings came out of the EAwin32Client code
 inline static const std::string pointname_string(const EPointName & t) {
    std::string s = "UNKNOWN";
@@ -893,7 +895,21 @@ static bool parse_named_sample_values_for_subject(
    return true;
 }
 
+// takes something like
+//     std::vector<EPointName> points = {
+//     EPointName::Temperature_air_supply,
+//     EPointName::Temperature_air_zone,
+//     EPointName::Command_fanSpeed
+//  };
+//  and returns a json array of the EPointName strings:
+//    [
+//    "Temperature_air_supply",
+//    "Temperature_air_zone",
+//    "Command_fanSpeed"
+//  ]
 static const json::value json_pointname_array(const std::vector<EPointName>& points) {
+   // Profiles and named writes use the same EPointName strings so clients can
+   // use profile metadata directly as request keys.
    auto obj = json::value::array();
    int i = 0;
    for (auto const& point : points) {
@@ -902,7 +918,6 @@ static const json::value json_pointname_array(const std::vector<EPointName>& poi
    return obj;
 }
 
-
 // fill in a json object reference with subject data
 const json::value handler::json_subject(const NGuiKey & key, bool recurse) {
    json::value obj;
@@ -910,8 +925,8 @@ const json::value handler::json_subject(const NGuiKey & key, bool recurse) {
    obj[U("key")] = json_key(key);
    try {
       obj[U("idtext")] = json_string(p_Port->SayTextIdentifyingSubject(key));
-      // SayInfoFromSubject carries the subject metadata exported by
-      // ASubject::SayBasicGuiPack(): model label id, display name, and child keys.
+      // SayInfoFromSubject supplies model identity and display metadata for the
+      // subject; the input point order is pulled separately below.
       GuiPackSubjectBasic_t s = p_Port->SayInfoFromSubject(key);
       obj[U("reply")] = json_reply(s.getterReply);
       obj[U("domain")] = json_key(s.hostDomainKey);
@@ -960,8 +975,8 @@ const json::value handler::json_subject(const NGuiKey & key, bool recurse) {
          obj[U("casekeys")][i++] = json_key(ckey);
       }
       i = 0;
-      // Point order is owned by the controller/tool registration path, not the
-      // subject GUI pack. Keep this separate so clients can see the write contract.
+      // The write contract for a subject is owned by the registered controller
+      // input order, not by the subject's static GUI pack.
       auto points = p_Port->SayInputPointNameOrderExpectedBySubject(key);
       for (auto const& p : points) {
          obj[U("points")][i++] = json_pointname(p);
@@ -989,11 +1004,10 @@ const json::value handler::json_contracts(void) {
    int subject_i = 0;
    for (auto const& skey : domain.subjectKeys) {
       try {
-         // Metadata breadcrumb 1: subject keys come from the domain; each key is
-         // dereferenced here into the exported subject pack from libEA.
+         // Subject keys come from the domain snapshot; each key is expanded
+         // through libEA to collect model metadata and the write input contract.
          GuiPackSubjectBasic_t subject = p_Port->SayInfoFromSubject(skey);
-         // Metadata breadcrumb 2: the ordered input contract comes from the
-         // controller's BAS-point registration for this subject.
+         // get the order of columns expected by the backend
          auto points = p_Port->SayInputPointNameOrderExpectedBySubject(skey);
          // Metadata breadcrumb 3: contract id and label are contract metadata
          // derived from the subject's compiled EDataLabel. Subjects below only
@@ -1025,12 +1039,14 @@ const json::value handler::json_contracts(void) {
             contracts.push_back({ contract_id, label, points });
          }
 
+         // The subject list maps concrete subject keys to their profile and
+         // repeats the point names there for clarity
          obj[U("subjects")][subject_i][U("key")] = json_key(skey);
          obj[U("subjects")][subject_i][U("name")] = json_string(name);
          obj[U("subjects")][subject_i][U("contract")] = json_string(contract_id);
          subject_i++;
       } catch (...) {
-         // Skip malformed subjects; existing /subjects endpoint carries detailed object errors.
+         // Existing subject endpoints expose per-object errors; contracts skip malformed subjects.
       }
    }
 
@@ -1783,30 +1799,49 @@ void handler::handle_put(http_request message)
          if (handler::get_json_value(false, jvalue, querystringmap, U("subject"), reply, subjectkey) &&
             handler::get_json_value(false, jvalue, querystringmap, U("values"), values)) {
             NGuiKey subject(subjectkey);
-            std::vector<EPointName> points;
-            try {
-               points = p_Port->SayInputPointNameOrderExpectedBySubject(subject);
-            } catch (...) {
+            if (values.is_array()) {
+               auto a = values.as_array();
+               // a is now a json::value::array (hopefully of doubles)
+               int count = a.size();
+               if (count > 0 && count < 10000) {  // MAXIMUM 9999 values accepted in a sample (make into a constant!)
+                  // WARNING: dlist gets freed at end of block, so if Dan's code isn't
+                  // making a copy of it there WILL be problems!
+                  std::vector<double> dlist;
+                  try {
+                     for (auto const& v : a) {
+                        dlist.push_back(v.as_double());
+                     }
+                  } catch (...) {
+                     stringstream msg;
+                     msg << U("Invalid value type likely due to non-numeric data");
+                     ucout << msg.str() << endl;
+                     reply[U("error")] = json::value(msg.str());
+                     reply[U("returncode")] = json::value(-1);
+                     retval = status_codes::BadRequest;
+                     goto done;
+                  }
+                  TRYAPI1(values,
+                     p_Port->SetCoincidentInputsForSubject(dlist, subject);
+                     update_seq();
+                     stringstream msg;
+                     msg << U("added sample of ") << count << U(" channels");
+                     reply[U("returncode")] = json::value(0);
+                     reply[U("status")] = json::value(msg.str());
+                  );
+               } else {
+                  stringstream msg;
+                  msg << U("channel count out of range");
+                  ucout << funcname << U(": ") << msg.str() << endl;
+                  reply[U("error")] = json::value(msg.str());
+                  reply[U("returncode")] = json::value(-1);
+                  retval = status_codes::BadRequest;
+               }
+            } else {
                stringstream msg;
-               msg << U("invalid subject key ") << subjectkey;
+               msg << U("values parameter must be array of doubles");
                ucout << funcname << U(": ") << msg.str() << endl;
                reply[U("error")] = json::value(msg.str());
-               reply[U("returncode")] = json_reply(EGuiReply::FAIL_any_givenKeyNotValidForFunctionCalled);
-               retval = status_codes::BadRequest;
-               goto done;
-            }
-            std::vector<double> dlist;
-            if (parse_legacy_sample_values_for_subject(values, points, subjectkey, dlist, reply)) {
-               TRYAPI1(values,
-                  p_Port->SetCoincidentInputsForSubject(dlist, subject);
-                  update_seq();
-                  stringstream msg;
-                  msg << U("added sample of ") << dlist.size() << U(" channels");
-                  reply[U("returncode")] = json_reply(EGuiReply::OKAY_allDone);
-                  reply[U("status")] = json::value(msg.str());
-               );
-            } else {
-               ucout << funcname << U(": ") << reply[U("error")].as_string() << endl;
+               reply[U("returncode")] = json::value(-1);
                retval = status_codes::BadRequest;
             }
          } else {
@@ -1909,15 +1944,32 @@ void handler::handle_put(http_request message)
          }
 
       } else if (path == U("/ctrl/sampletimestep-named")) {
+          // this is the endpoint for the new self-describing JSON input format.
+          // {
+          //    "time": 1718640000,
+          //    "values_by_subject": [
+          //      {
+          //        "subject": 12345,
+          //        "values": {
+          //          "Temperature_air_zone": 72.4,
+          //          "Temperature_air_supply": 55.1
+          //        }
+          //      }
+          //    ]
+          //  }
          const auto funcname = U("SampleTimeStepNamed");
          time_t timestamp;
          json::value valuesbysubject;
          uint64_t subjectkey;
+         // Keep the compound timestamp + all-subject input update + timestep
+         // operation serialized just like the existing sampletimestep route.
          std::lock_guard<std::mutex> stslock(instance_sampletimestep_lock);  // released at end of scope
          if (  handler::get_json_value(false, jvalue, querystringmap, U("values_by_subject"), valuesbysubject) &&
                handler::get_json_value(false, jvalue, querystringmap, U("time"), reply, timestamp) ) {
             std::tm tm;
             localtime_s(&tm, &timestamp);
+            // The domain timestamp is set once before loading all coincident
+            // inputs, then SingleStepDomainOnTimeAndInputs consumes them below.
             TRYAPI1(time,
                p_Port->SetTimeStampInDomain(tm);
                reply[U("status")] = json::value(U("time set"));
@@ -1926,7 +1978,6 @@ void handler::handle_put(http_request message)
             );
             if (valuesbysubject.is_array() && retval == status_codes::OK) {
                for (const auto & json_o : valuesbysubject.as_array()) {
-                  // json_o is a json object with properties "subject" and "values"
                   uint64_t subjectkey = 0;
                   if (!json_o.is_object()) {
                      stringstream msg;
@@ -1951,6 +2002,9 @@ void handler::handle_put(http_request message)
                   NGuiKey subject(subjectkey);
                   std::vector<EPointName> points;
                   try {
+                     // libEA owns the canonical input order. The request is
+                     // named, but SetCoincidentInputsForSubject still needs an
+                     // ordered vector of doubles in this exact sequence.
                      points = p_Port->SayInputPointNameOrderExpectedBySubject(subject);
                   } catch (...) {
                      stringstream msg;
@@ -1979,6 +2033,8 @@ void handler::handle_put(http_request message)
                      retval = status_codes::BadRequest;
                      goto done;
                   }
+                  // Each subject's named values are normalized into the same
+                  // ordered vector consumed by the existing write API.
                   TRYAPI1(valuesbysubject,
                      p_Port->SetCoincidentInputsForSubject(dlist, subject);
                      stringstream msg;
@@ -1997,6 +2053,8 @@ void handler::handle_put(http_request message)
                retval = status_codes::BadRequest;
             }
             if (retval == status_codes::OK) {
+               // Advance the model only after every subject's inputs for this
+               // timestamp have been accepted.
                p_Port->SingleStepDomainOnTimeAndInputs();
                update_seq();
             } else {
