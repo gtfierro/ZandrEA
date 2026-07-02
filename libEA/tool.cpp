@@ -33,11 +33,13 @@ See the License for the specific language governing permissions and limitations 
 
 #include "rule.hpp"
 #include "seqElement.hpp"
+#include "s223Model.hpp"
 #include "subject.hpp" 
 #include "taskClock.hpp"
 #include "viewParts.hpp"
 #include "mvc_model.hpp"
 
+#include <iostream>
 #include <utility>
 
 
@@ -3801,6 +3803,14 @@ CApplication::CApplication( void )
                                                                *u_View )
                      ),
                      u_EachToolInApp(0) {
+
+   if (auto s223Config = ReadS223ModelLoadConfigFromEnvironment(); s223Config.has_value()) {
+      const auto s223Summary = LoadS223ModelFromTurtleFiles(*s223Config);
+      std::cout << "Loaded ASHRAE 223 ontology from " << s223Summary.ontology.path
+                << " (" << s223Summary.ontology.quadCount << " quads) and site model from "
+                << s223Summary.site.path << " (" << s223Summary.site.quadCount
+                << " quads); total quads: " << s223Summary.TotalQuadCount() << std::endl;
+   }
 
 
    u_EachToolInApp.push_back(

@@ -200,8 +200,8 @@ $(HDF5INSTALLDIR):
 #  NATIVE_CXX := $(lastword $(sort $(wildcard $(HOMEBREW_PREFIX)/bin/g++-[0-9] $(HOMEBREW_PREFIX)/bin/g++-[0-9][0-9])))
 #  $(info Found newest homebrew CC = $(NATIVE_CC)   CXX = $(NATIVE_CXX))
 #else
-  NATIVE_CC := gcc
-  NATIVE_CXX := g++
+  NATIVE_CC ?= gcc
+  NATIVE_CXX ?= g++
   $(info Fell back to system CC = $(NATIVE_CC)   CXX = $(NATIVE_CXX))
 #endif
 
@@ -297,7 +297,11 @@ endif
 # Use app's src file to define any deeper path needed (e.g., a header with #include <grpcpp/grpcpp.h>).
 # Else, INCLUDE of deeper library dirs can shadow calls app makes to system libraries (e.g., <ctime>).
 
-INCLUDES = -I$(PREFIX)/libEA -I$(PREFIX)/include -I$(HDF5INSTALLDIR)/include $(HB_INCLUDES)
+CONAN_GENERATORS_DIR ?= $(PREFIX)/conan
+RDF4CPP_CFLAGS := $(shell PKG_CONFIG_PATH=$(CONAN_GENERATORS_DIR):$${PKG_CONFIG_PATH} pkg-config --cflags rdf4cpp 2>/dev/null)
+RDF4CPP_LIBS := $(shell PKG_CONFIG_PATH=$(CONAN_GENERATORS_DIR):$${PKG_CONFIG_PATH} pkg-config --libs rdf4cpp 2>/dev/null)
+
+INCLUDES = -I$(PREFIX)/libEA -I$(PREFIX)/include -I$(HDF5INSTALLDIR)/include $(HB_INCLUDES) $(RDF4CPP_CFLAGS)
 
 INCLUDES += -I$(PREFIX)/grpc/include -I$(PREFIX)/protobuf
 #bad way was += $(addprefix -I,$(shell find $(PREFIX)/grpc/include -type d)) -I$(PREFIX)/protobuf
@@ -327,6 +331,7 @@ EAD_DEPS := $(EAD_SRCS:.cpp=.d)
 
 EAD_LIBS := -L$(HDF5INSTALLDIR)/lib \
             -L./lib $(HB_LDFLAGS) \
+            $(RDF4CPP_LIBS) \
             -lcpprest $(BOOSTLIBS) \
             -lhdf5 \
             -lsz \
@@ -397,7 +402,7 @@ bin:
 #==================================================================================================C====5
 # Extending these flags
 
-CXXFLAGS += -std=c++17 -g -O $(CXX_FEATURE_FLAGS) $(CXXOPTS) $(DEFS) $(INCLUDES)
+CXXFLAGS += -std=c++20 -g -O $(CXX_FEATURE_FLAGS) $(CXXOPTS) $(DEFS) $(INCLUDES)
 LDFLAGS += -g
 
 #VVVVVVVV1VVVVVVVVV2VVVVVVVVV3VVVVVVVVV4VVVVVVVVV5VVVVVVVVV6VVVVVVVVV7VVVVVVVVV8VVVVVVVVV9VVVVVVVVVCVVVV5

@@ -13,7 +13,9 @@ RUN apt update && DEBIAN_FRONTEND="noninteractive" apt upgrade -y && DEBIAN_FRON
     libcereal-dev \
     libcpprest-dev \
     libstdc++-13-dev \
-    libsz2
+    libsz2 \
+    gcc-14 \
+    g++-14
 #  && rm -rf /var/lib/apt/lists/* # Don't remove because derivatives may add more pkgs
 
 FROM prod_baseos AS prod_buildbase
@@ -25,12 +27,15 @@ RUN DEBIAN_FRONTEND="noninteractive" apt install -y \
     build-essential \
     libaec-dev \
     nodejs \
+    python3-pip \
+    pkg-config \
   && rm -rf /var/lib/apt/lists/*
+RUN pip3 install --break-system-packages "conan>=2,<3"
 RUN mkdir -p /ea/include/ea /ea/lib/ea /ea/bin
 ENV PATH $PKGROOT/HDF5/bin:$PATH
 WORKDIR $PKGROOT
 COPY hdf5-1.14.4-2.tar.gz h5c++.tmpl Makefile ./
-RUN make compiler
+RUN make compiler NATIVE_CC=gcc-14 NATIVE_CXX=g++-14
 
 FROM prod_buildbase AS prod_appbuilder
 LABEL maintainer="Steve Barber <steve.barber@nist.gov>"
@@ -39,9 +44,17 @@ ENV HOME=${home}
 ENV PKGROOT=${home}
 ENV PATH $PKGROOT/HDF5/bin:$PATH
 WORKDIR $PKGROOT
+COPY conanfile.txt ./
+RUN conan profile detect --force && \
+    conan remote add dice-group https://conan.dice-research.org/artifactory/api/conan/tentris && \
+    CC=gcc-14 CXX=g++-14 conan install . --output-folder=conan --build=missing \
+      -s compiler.cppstd=20 \
+      -s compiler.version=14 \
+      -s compiler.libcxx=libstdc++11 \
+      -o '*:shared=False'
 COPY libEA ./libEA/
 COPY EAd ./EAd/
-RUN make build-ead
+RUN make build-ead NATIVE_CC=gcc-14 NATIVE_CXX=g++-14
 
 FROM prod_baseos
 LABEL maintainer="Steve Barber <steve.barber@nist.gov>"

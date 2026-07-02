@@ -1,0 +1,5 @@
+[requires]
+rdf4cpp/0.1.13
+
+[generators]
+PkgConfigDeps

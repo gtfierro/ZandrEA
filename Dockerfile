@@ -27,6 +27,8 @@ RUN apt update && DEBIAN_FRONTEND="noninteractive" apt upgrade -y && DEBIAN_FRON
     libstdc++-13-dev \
     libsz2 \
     build-essential \
+    gcc-14 \
+    g++-14 \
     gdb
 #  && rm -rf /var/lib/apt/lists/*
 
@@ -40,12 +42,15 @@ ENV PKGROOT=${home}
 RUN apt update && DEBIAN_FRONTEND="noninteractive" apt install -y \
     libaec-dev \
     nodejs \
+    python3-pip \
+    pkg-config \
   && rm -rf /var/lib/apt/lists/*
+RUN pip3 install --break-system-packages "conan>=2,<3"
 RUN mkdir -p /ea/include/ea /ea/lib/ea /ea/bin /data
 ENV PATH=$PKGROOT/HDF5/bin:$PATH
 WORKDIR $PKGROOT
 COPY hdf5-1.14.4-2.tar.gz h5c++.tmpl Makefile ./
-RUN make compiler
+RUN make compiler NATIVE_CC=gcc-14 NATIVE_CXX=g++-14
 
 #==================================================================================================C====5
 # DAV - Install latest CMake from Kitware repo (v. 4.2.3 on 260218); apt default CMake too old for gRPC.
@@ -109,10 +114,18 @@ ENV PATH=$PATH:$PKGROOT/grpc/bin:$PKGROOT/protobuf
 #==================================================================================================C====5
 # Build "ead" executable
 WORKDIR $PKGROOT
+COPY conanfile.txt ./
+RUN conan profile detect --force && \
+    conan remote add dice-group https://conan.dice-research.org/artifactory/api/conan/tentris && \
+    CC=gcc-14 CXX=g++-14 conan install . --output-folder=conan --build=missing \
+      -s compiler.cppstd=20 \
+      -s compiler.version=14 \
+      -s compiler.libcxx=libstdc++11 \
+      -o '*:shared=False'
 COPY libEA ./libEA/
 COPY EAd ./EAd/
 # Call stage's copy of root Makefile; "build-ead" is phony label of rule building executable /ea/bin/ead
-RUN make build-ead
+RUN make build-ead NATIVE_CC=gcc-14 NATIVE_CXX=g++-14
 
 FROM baseos
 LABEL maintainer="Steve Barber <steve.barber@nist.gov>"
