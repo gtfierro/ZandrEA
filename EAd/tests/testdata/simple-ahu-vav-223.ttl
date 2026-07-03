@@ -1,0 +1,214 @@
+# Simple, fully-annotated ASHRAE 223 model for ZandrEA tool-contract bring-up.
+#
+# Inspired by NIST-IBAL but deliberately clean: 1 AHU + 2 downstream VAVs, with
+# the annotations the real IBAL model lacks, so profile-driven binding via the
+# shifty witness API resolves every role to exactly one node.
+#
+# Annotation conventions (the "correct annotations" this model exists to carry):
+#   * Every bound property gets  zea:pointRole <role>  — the semantic slot the
+#     analysis module names (outsideAirTemp, chwValveCmd, ...). This is the
+#     reliable disambiguator; in the real IBAL model the air-side temperatures
+#     carry no role/aspect and can only be told apart by BAS label + topology.
+#   * Each property still carries qudt:hasQuantityKind (+ unit) so a finder can
+#     also sanity-check the quantity, and s223 structure (contains / channels /
+#     connection points / cnx) is faithful so structural inference still applies.
+#   * Coil components also carry native s223:hasRole (Role-Cooling / Role-Heating)
+#     so the layered finder can use graph-native roles where the model provides
+#     them and zea:pointRole where it does not.
+#   * zea:name gives each createable tool its display/startup name.
+#
+# Reach patterns (what zea-core inference will later collapse to zea:hasBoundPoint):
+#   sensor:    ?ch a s223:Sensor   ; s223:hasObservationLocation ?loc ; s223:observes ?prop
+#   actuator:  ?ch a s223:Actuator ; s223:actuates ?comp ; s223:actuatedByProperty ?prop
+#   setpoint:  ?equip s223:hasProperty ?prop
+# where ?loc / ?comp is the equipment itself, something it s223:contains*, or one
+# of its s223:hasConnectionPoint nodes.
+
+@prefix ex:            <http://example.org/zea-demo#> .
+@prefix s223:          <http://data.ashrae.org/standard223#> .
+@prefix qudt:          <http://qudt.org/schema/qudt/> .
+@prefix quantitykind:  <http://qudt.org/vocab/quantitykind/> .
+@prefix unit:          <http://qudt.org/vocab/unit/> .
+@prefix zea:           <urn:zandrea:tool-profile#> .
+@prefix rdf:           <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:          <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:           <http://www.w3.org/2001/XMLSchema#> .
+
+#####################################################################
+# Point-role vocabulary. Local name == the analysis-module role name.
+#####################################################################
+
+zea:PointRole a rdfs:Class .
+
+# --- AHU roles ---
+zea:outsideAirTemp      a zea:PointRole ; rdfs:label "Outside air temperature" .
+zea:returnAirTemp       a zea:PointRole ; rdfs:label "Return air temperature" .
+zea:mixedAirTemp        a zea:PointRole ; rdfs:label "Mixed air temperature" .
+zea:supplyAirTemp       a zea:PointRole ; rdfs:label "Supply air temperature" .
+zea:supplyAirTempSetpt  a zea:PointRole ; rdfs:label "Supply air temperature setpoint" .
+zea:supplyStaticPressure a zea:PointRole ; rdfs:label "Supply static pressure" .
+zea:supplyAirFlow       a zea:PointRole ; rdfs:label "Supply air flow" .
+zea:mixingDamperCmd     a zea:PointRole ; rdfs:label "Mixing-box damper command" .
+zea:chwValveCmd         a zea:PointRole ; rdfs:label "Chilled-water valve command" .
+zea:hwValveCmd          a zea:PointRole ; rdfs:label "Hot-water valve command" .
+zea:systemOccupied      a zea:PointRole ; rdfs:label "System occupied" .
+
+# --- VAV roles ---
+zea:inletAirTemp        a zea:PointRole ; rdfs:label "Inlet (primary) air temperature" .
+zea:dischargeAirTemp    a zea:PointRole ; rdfs:label "Discharge air temperature" .
+zea:zoneAirTemp         a zea:PointRole ; rdfs:label "Zone air temperature" .
+zea:zoneTempSetptClg    a zea:PointRole ; rdfs:label "Zone cooling setpoint" .
+zea:zoneTempSetptHtg    a zea:PointRole ; rdfs:label "Zone heating setpoint" .
+zea:inletStaticPressure a zea:PointRole ; rdfs:label "Inlet static pressure" .
+zea:airFlow             a zea:PointRole ; rdfs:label "Discharge air flow" .
+zea:airFlowSetpt        a zea:PointRole ; rdfs:label "Discharge air flow setpoint" .
+zea:damperCmd           a zea:PointRole ; rdfs:label "Damper command" .
+zea:zoneOccupied        a zea:PointRole ; rdfs:label "Zone occupied" .
+
+#####################################################################
+# AHU-1
+#####################################################################
+
+ex:AHU_1
+  a s223:AirHandlingUnit ;
+  zea:name "AHU-1" ;
+  rdfs:label "AHU 1" ;
+  s223:contains ex:AHU_1_MixingDamper , ex:AHU_1_CoolingCoil , ex:AHU_1_HeatingCoil , ex:AHU_1_Fan ;
+  s223:hasConnectionPoint
+     ex:AHU_1_OA_ICP , ex:AHU_1_RA_ICP , ex:AHU_1_SA_OCP ,
+     ex:AHU_1_CHW_ICP , ex:AHU_1_CHW_OCP , ex:AHU_1_HW_ICP , ex:AHU_1_HW_OCP ;
+  s223:hasProperty ex:ahu1_sat_sp ;      # supply-air temperature setpoint (setpoint reach)
+.
+
+ex:AHU_1_MixingDamper a s223:Damper ; rdfs:label "AHU 1 mixing damper" .
+ex:AHU_1_CoolingCoil  a s223:CoolingCoil ; s223:hasRole s223:Role-Cooling ; rdfs:label "AHU 1 cooling coil" .
+ex:AHU_1_HeatingCoil  a s223:HeatingCoil ; s223:hasRole s223:Role-Heating ; rdfs:label "AHU 1 heating coil" .
+ex:AHU_1_Fan          a s223:Fan ; rdfs:label "AHU 1 supply fan" .
+
+# Air-side connection points (medium separates air from water/electric).
+ex:AHU_1_OA_ICP a s223:InletConnectionPoint  ; s223:hasMedium s223:Fluid-Air ; rdfs:label "AHU 1 outside-air inlet" .
+ex:AHU_1_RA_ICP a s223:InletConnectionPoint  ; s223:hasMedium s223:Fluid-Air ; rdfs:label "AHU 1 return-air inlet" .
+ex:AHU_1_SA_OCP a s223:OutletConnectionPoint ; s223:hasMedium s223:Fluid-Air ; rdfs:label "AHU 1 supply-air outlet" .
+# Water-side connection points.
+ex:AHU_1_CHW_ICP a s223:InletConnectionPoint  ; s223:hasMedium s223:Water-GlycolSolution ; rdfs:label "AHU 1 CHW inlet" .
+ex:AHU_1_CHW_OCP a s223:OutletConnectionPoint ; s223:hasMedium s223:Water-GlycolSolution ; rdfs:label "AHU 1 CHW outlet" .
+ex:AHU_1_HW_ICP  a s223:InletConnectionPoint  ; s223:hasMedium s223:Water-GlycolSolution ; rdfs:label "AHU 1 HW inlet" .
+ex:AHU_1_HW_OCP  a s223:OutletConnectionPoint ; s223:hasMedium s223:Water-GlycolSolution ; rdfs:label "AHU 1 HW outlet" .
+
+# --- AHU-1 sensor channels ---
+ex:AHU_1_ch_oat a s223:Sensor ; s223:hasObservationLocation ex:AHU_1_OA_ICP ; s223:observes ex:ahu1_oat ; rdfs:label "AHU 1 OAT" .
+ex:AHU_1_ch_rat a s223:Sensor ; s223:hasObservationLocation ex:AHU_1_RA_ICP ; s223:observes ex:ahu1_rat ; rdfs:label "AHU 1 RAT" .
+ex:AHU_1_ch_mat a s223:Sensor ; s223:hasObservationLocation ex:AHU_1_CoolingCoil ; s223:observes ex:ahu1_mat ; rdfs:label "AHU 1 MAT" .
+ex:AHU_1_ch_sat a s223:Sensor ; s223:hasObservationLocation ex:AHU_1_SA_OCP ; s223:observes ex:ahu1_sat ; rdfs:label "AHU 1 SAT" .
+ex:AHU_1_ch_sap a s223:Sensor ; s223:hasObservationLocation ex:AHU_1_SA_OCP ; s223:observes ex:ahu1_sap ; rdfs:label "AHU 1 SAP" .
+ex:AHU_1_ch_saf a s223:Sensor ; s223:hasObservationLocation ex:AHU_1_SA_OCP ; s223:observes ex:ahu1_saf ; rdfs:label "AHU 1 SAF" .
+ex:AHU_1_ch_occ a s223:Sensor ; s223:hasObservationLocation ex:AHU_1 ; s223:observes ex:ahu1_occ ; rdfs:label "AHU 1 occ" .
+
+# --- AHU-1 actuator channels ---
+ex:AHU_1_ch_dmp a s223:Actuator ; s223:actuates ex:AHU_1_MixingDamper ; s223:actuatedByProperty ex:ahu1_dmp_c ; rdfs:label "AHU 1 damper cmd" .
+ex:AHU_1_ch_chw a s223:Actuator ; s223:actuates ex:AHU_1_CoolingCoil ; s223:actuatedByProperty ex:ahu1_chw_c ; rdfs:label "AHU 1 CHW cmd" .
+ex:AHU_1_ch_hw  a s223:Actuator ; s223:actuates ex:AHU_1_HeatingCoil ; s223:actuatedByProperty ex:ahu1_hw_c  ; rdfs:label "AHU 1 HW cmd" .
+
+# --- AHU-1 observable / actuatable properties ---
+ex:ahu1_oat a s223:QuantifiableObservableProperty ; qudt:hasQuantityKind quantitykind:Temperature ; qudt:hasUnit unit:DEG_C ; zea:pointRole zea:outsideAirTemp ; rdfs:label "AHU 1 outside air temp" .
+ex:ahu1_rat a s223:QuantifiableObservableProperty ; qudt:hasQuantityKind quantitykind:Temperature ; qudt:hasUnit unit:DEG_C ; zea:pointRole zea:returnAirTemp ; rdfs:label "AHU 1 return air temp" .
+ex:ahu1_mat a s223:QuantifiableObservableProperty ; qudt:hasQuantityKind quantitykind:Temperature ; qudt:hasUnit unit:DEG_C ; zea:pointRole zea:mixedAirTemp ; rdfs:label "AHU 1 mixed air temp" .
+ex:ahu1_sat a s223:QuantifiableObservableProperty ; qudt:hasQuantityKind quantitykind:Temperature ; qudt:hasUnit unit:DEG_C ; zea:pointRole zea:supplyAirTemp ; rdfs:label "AHU 1 supply air temp" .
+ex:ahu1_sat_sp a s223:QuantifiableObservableProperty ; qudt:hasQuantityKind quantitykind:Temperature ; qudt:hasUnit unit:DEG_C ; zea:pointRole zea:supplyAirTempSetpt ; rdfs:label "AHU 1 supply air temp setpt" .
+ex:ahu1_sap a s223:QuantifiableObservableProperty ; qudt:hasQuantityKind quantitykind:Pressure ; qudt:hasUnit unit:PA ; zea:pointRole zea:supplyStaticPressure ; rdfs:label "AHU 1 supply static pressure" .
+ex:ahu1_saf a s223:QuantifiableObservableProperty ; qudt:hasQuantityKind quantitykind:VolumeFlowRate ; qudt:hasUnit unit:L-PER-SEC ; zea:pointRole zea:supplyAirFlow ; rdfs:label "AHU 1 supply air flow" .
+ex:ahu1_dmp_c a s223:QuantifiableObservableProperty ; qudt:hasQuantityKind quantitykind:DimensionlessRatio ; qudt:hasUnit unit:PERCENT ; zea:pointRole zea:mixingDamperCmd ; rdfs:label "AHU 1 mixing damper cmd" .
+ex:ahu1_chw_c a s223:QuantifiableObservableProperty ; qudt:hasQuantityKind quantitykind:DimensionlessRatio ; qudt:hasUnit unit:PERCENT ; zea:pointRole zea:chwValveCmd ; rdfs:label "AHU 1 CHW valve cmd" .
+ex:ahu1_hw_c  a s223:QuantifiableObservableProperty ; qudt:hasQuantityKind quantitykind:DimensionlessRatio ; qudt:hasUnit unit:PERCENT ; zea:pointRole zea:hwValveCmd ; rdfs:label "AHU 1 HW valve cmd" .
+ex:ahu1_occ a s223:EnumeratedObservableProperty ; zea:pointRole zea:systemOccupied ; rdfs:label "AHU 1 system occupied" .
+
+#####################################################################
+# Air distribution: AHU-1 supply -> VAV-1, VAV-2  (cnx pattern)
+#####################################################################
+
+ex:SupplyDuct_1 a s223:Connection ; s223:hasMedium s223:Fluid-Air ;
+  s223:cnx ex:AHU_1_SA_OCP , ex:VAV_1_ICP ; rdfs:label "Supply duct to VAV 1" .
+ex:SupplyDuct_2 a s223:Connection ; s223:hasMedium s223:Fluid-Air ;
+  s223:cnx ex:AHU_1_SA_OCP , ex:VAV_2_ICP ; rdfs:label "Supply duct to VAV 2" .
+
+#####################################################################
+# VAV-1  (served by AHU-1)
+#####################################################################
+
+ex:VAV_1
+  a s223:TerminalUnit ;
+  zea:name "VAV-1" ;
+  rdfs:label "VAV 1" ;
+  s223:contains ex:VAV_1_Damper , ex:VAV_1_HeatingCoil ;
+  s223:hasConnectionPoint ex:VAV_1_ICP , ex:VAV_1_OCP , ex:VAV_1_Z_ICP ;
+  s223:hasProperty ex:vav1_flow_sp , ex:vav1_zt_sp_clg , ex:vav1_zt_sp_htg ;
+.
+ex:VAV_1_Damper      a s223:Damper ; rdfs:label "VAV 1 damper" .
+ex:VAV_1_HeatingCoil a s223:HeatingCoil ; s223:hasRole s223:Role-Heating ; rdfs:label "VAV 1 reheat coil" .
+ex:VAV_1_ICP a s223:InletConnectionPoint  ; s223:hasMedium s223:Fluid-Air ; rdfs:label "VAV 1 inlet" .
+ex:VAV_1_OCP a s223:OutletConnectionPoint ; s223:hasMedium s223:Fluid-Air ; rdfs:label "VAV 1 discharge" .
+# Zone-sensing connection point: the VAV controller's zone inputs (temp, occ)
+# hang off the served zone, reached from the VAV as one of its connection points.
+ex:VAV_1_Z_ICP a s223:InletConnectionPoint ; s223:hasMedium s223:Fluid-Air ; s223:mapsTo ex:VAV_1_Zone ; rdfs:label "VAV 1 zone sensing" .
+ex:VAV_1_Zone a s223:Zone ; rdfs:label "VAV 1 zone" .
+
+ex:VAV_1_ch_sat a s223:Sensor ; s223:hasObservationLocation ex:VAV_1_ICP ; s223:observes ex:vav1_sat ; rdfs:label "VAV 1 inlet temp" .
+ex:VAV_1_ch_dat a s223:Sensor ; s223:hasObservationLocation ex:VAV_1_OCP ; s223:observes ex:vav1_dat ; rdfs:label "VAV 1 discharge temp" .
+ex:VAV_1_ch_zat a s223:Sensor ; s223:hasObservationLocation ex:VAV_1_Z_ICP ; s223:observes ex:vav1_zat ; rdfs:label "VAV 1 zone temp" .
+ex:VAV_1_ch_sap a s223:Sensor ; s223:hasObservationLocation ex:VAV_1_ICP ; s223:observes ex:vav1_sap ; rdfs:label "VAV 1 inlet pressure" .
+ex:VAV_1_ch_flow a s223:Sensor ; s223:hasObservationLocation ex:VAV_1_OCP ; s223:observes ex:vav1_flow ; rdfs:label "VAV 1 flow" .
+ex:VAV_1_ch_occ a s223:Sensor ; s223:hasObservationLocation ex:VAV_1_Z_ICP ; s223:observes ex:vav1_occ ; rdfs:label "VAV 1 occ" .
+ex:VAV_1_ch_dmp a s223:Actuator ; s223:actuates ex:VAV_1_Damper ; s223:actuatedByProperty ex:vav1_dmp_c ; rdfs:label "VAV 1 damper cmd" .
+ex:VAV_1_ch_hw  a s223:Actuator ; s223:actuates ex:VAV_1_HeatingCoil ; s223:actuatedByProperty ex:vav1_hw_c ; rdfs:label "VAV 1 HW cmd" .
+
+ex:vav1_sat a s223:QuantifiableObservableProperty ; qudt:hasQuantityKind quantitykind:Temperature ; qudt:hasUnit unit:DEG_C ; zea:pointRole zea:inletAirTemp ; rdfs:label "VAV 1 inlet air temp" .
+ex:vav1_dat a s223:QuantifiableObservableProperty ; qudt:hasQuantityKind quantitykind:Temperature ; qudt:hasUnit unit:DEG_C ; zea:pointRole zea:dischargeAirTemp ; rdfs:label "VAV 1 discharge air temp" .
+ex:vav1_zat a s223:QuantifiableObservableProperty ; qudt:hasQuantityKind quantitykind:Temperature ; qudt:hasUnit unit:DEG_C ; zea:pointRole zea:zoneAirTemp ; rdfs:label "VAV 1 zone air temp" .
+ex:vav1_zt_sp_clg a s223:QuantifiableObservableProperty ; qudt:hasQuantityKind quantitykind:Temperature ; qudt:hasUnit unit:DEG_C ; zea:pointRole zea:zoneTempSetptClg ; rdfs:label "VAV 1 zone clg setpt" .
+ex:vav1_zt_sp_htg a s223:QuantifiableObservableProperty ; qudt:hasQuantityKind quantitykind:Temperature ; qudt:hasUnit unit:DEG_C ; zea:pointRole zea:zoneTempSetptHtg ; rdfs:label "VAV 1 zone htg setpt" .
+ex:vav1_sap a s223:QuantifiableObservableProperty ; qudt:hasQuantityKind quantitykind:Pressure ; qudt:hasUnit unit:PA ; zea:pointRole zea:inletStaticPressure ; rdfs:label "VAV 1 inlet static pressure" .
+ex:vav1_flow a s223:QuantifiableObservableProperty ; qudt:hasQuantityKind quantitykind:VolumeFlowRate ; qudt:hasUnit unit:L-PER-SEC ; zea:pointRole zea:airFlow ; rdfs:label "VAV 1 air flow" .
+ex:vav1_flow_sp a s223:QuantifiableObservableProperty ; qudt:hasQuantityKind quantitykind:VolumeFlowRate ; qudt:hasUnit unit:L-PER-SEC ; zea:pointRole zea:airFlowSetpt ; rdfs:label "VAV 1 air flow setpt" .
+ex:vav1_dmp_c a s223:QuantifiableObservableProperty ; qudt:hasQuantityKind quantitykind:DimensionlessRatio ; qudt:hasUnit unit:PERCENT ; zea:pointRole zea:damperCmd ; rdfs:label "VAV 1 damper cmd" .
+ex:vav1_hw_c a s223:QuantifiableObservableProperty ; qudt:hasQuantityKind quantitykind:DimensionlessRatio ; qudt:hasUnit unit:PERCENT ; zea:pointRole zea:hwValveCmd ; rdfs:label "VAV 1 HW valve cmd" .
+ex:vav1_occ a s223:EnumeratedObservableProperty ; zea:pointRole zea:zoneOccupied ; rdfs:label "VAV 1 zone occupied" .
+
+#####################################################################
+# VAV-2  (served by AHU-1)
+#####################################################################
+
+ex:VAV_2
+  a s223:TerminalUnit ;
+  zea:name "VAV-2" ;
+  rdfs:label "VAV 2" ;
+  s223:contains ex:VAV_2_Damper , ex:VAV_2_HeatingCoil ;
+  s223:hasConnectionPoint ex:VAV_2_ICP , ex:VAV_2_OCP , ex:VAV_2_Z_ICP ;
+  s223:hasProperty ex:vav2_flow_sp , ex:vav2_zt_sp_clg , ex:vav2_zt_sp_htg ;
+.
+ex:VAV_2_Damper      a s223:Damper ; rdfs:label "VAV 2 damper" .
+ex:VAV_2_HeatingCoil a s223:HeatingCoil ; s223:hasRole s223:Role-Heating ; rdfs:label "VAV 2 reheat coil" .
+ex:VAV_2_ICP a s223:InletConnectionPoint  ; s223:hasMedium s223:Fluid-Air ; rdfs:label "VAV 2 inlet" .
+ex:VAV_2_OCP a s223:OutletConnectionPoint ; s223:hasMedium s223:Fluid-Air ; rdfs:label "VAV 2 discharge" .
+ex:VAV_2_Z_ICP a s223:InletConnectionPoint ; s223:hasMedium s223:Fluid-Air ; s223:mapsTo ex:VAV_2_Zone ; rdfs:label "VAV 2 zone sensing" .
+ex:VAV_2_Zone a s223:Zone ; rdfs:label "VAV 2 zone" .
+
+ex:VAV_2_ch_sat a s223:Sensor ; s223:hasObservationLocation ex:VAV_2_ICP ; s223:observes ex:vav2_sat ; rdfs:label "VAV 2 inlet temp" .
+ex:VAV_2_ch_dat a s223:Sensor ; s223:hasObservationLocation ex:VAV_2_OCP ; s223:observes ex:vav2_dat ; rdfs:label "VAV 2 discharge temp" .
+ex:VAV_2_ch_zat a s223:Sensor ; s223:hasObservationLocation ex:VAV_2_Z_ICP ; s223:observes ex:vav2_zat ; rdfs:label "VAV 2 zone temp" .
+ex:VAV_2_ch_sap a s223:Sensor ; s223:hasObservationLocation ex:VAV_2_ICP ; s223:observes ex:vav2_sap ; rdfs:label "VAV 2 inlet pressure" .
+ex:VAV_2_ch_flow a s223:Sensor ; s223:hasObservationLocation ex:VAV_2_OCP ; s223:observes ex:vav2_flow ; rdfs:label "VAV 2 flow" .
+ex:VAV_2_ch_occ a s223:Sensor ; s223:hasObservationLocation ex:VAV_2_Z_ICP ; s223:observes ex:vav2_occ ; rdfs:label "VAV 2 occ" .
+ex:VAV_2_ch_dmp a s223:Actuator ; s223:actuates ex:VAV_2_Damper ; s223:actuatedByProperty ex:vav2_dmp_c ; rdfs:label "VAV 2 damper cmd" .
+ex:VAV_2_ch_hw  a s223:Actuator ; s223:actuates ex:VAV_2_HeatingCoil ; s223:actuatedByProperty ex:vav2_hw_c ; rdfs:label "VAV 2 HW cmd" .
+
+ex:vav2_sat a s223:QuantifiableObservableProperty ; qudt:hasQuantityKind quantitykind:Temperature ; qudt:hasUnit unit:DEG_C ; zea:pointRole zea:inletAirTemp ; rdfs:label "VAV 2 inlet air temp" .
+ex:vav2_dat a s223:QuantifiableObservableProperty ; qudt:hasQuantityKind quantitykind:Temperature ; qudt:hasUnit unit:DEG_C ; zea:pointRole zea:dischargeAirTemp ; rdfs:label "VAV 2 discharge air temp" .
+ex:vav2_zat a s223:QuantifiableObservableProperty ; qudt:hasQuantityKind quantitykind:Temperature ; qudt:hasUnit unit:DEG_C ; zea:pointRole zea:zoneAirTemp ; rdfs:label "VAV 2 zone air temp" .
+ex:vav2_zt_sp_clg a s223:QuantifiableObservableProperty ; qudt:hasQuantityKind quantitykind:Temperature ; qudt:hasUnit unit:DEG_C ; zea:pointRole zea:zoneTempSetptClg ; rdfs:label "VAV 2 zone clg setpt" .
+ex:vav2_zt_sp_htg a s223:QuantifiableObservableProperty ; qudt:hasQuantityKind quantitykind:Temperature ; qudt:hasUnit unit:DEG_C ; zea:pointRole zea:zoneTempSetptHtg ; rdfs:label "VAV 2 zone htg setpt" .
+ex:vav2_sap a s223:QuantifiableObservableProperty ; qudt:hasQuantityKind quantitykind:Pressure ; qudt:hasUnit unit:PA ; zea:pointRole zea:inletStaticPressure ; rdfs:label "VAV 2 inlet static pressure" .
+ex:vav2_flow a s223:QuantifiableObservableProperty ; qudt:hasQuantityKind quantitykind:VolumeFlowRate ; qudt:hasUnit unit:L-PER-SEC ; zea:pointRole zea:airFlow ; rdfs:label "VAV 2 air flow" .
+ex:vav2_flow_sp a s223:QuantifiableObservableProperty ; qudt:hasQuantityKind quantitykind:VolumeFlowRate ; qudt:hasUnit unit:L-PER-SEC ; zea:pointRole zea:airFlowSetpt ; rdfs:label "VAV 2 air flow setpt" .
+ex:vav2_dmp_c a s223:QuantifiableObservableProperty ; qudt:hasQuantityKind quantitykind:DimensionlessRatio ; qudt:hasUnit unit:PERCENT ; zea:pointRole zea:damperCmd ; rdfs:label "VAV 2 damper cmd" .
+ex:vav2_hw_c a s223:QuantifiableObservableProperty ; qudt:hasQuantityKind quantitykind:DimensionlessRatio ; qudt:hasUnit unit:PERCENT ; zea:pointRole zea:hwValveCmd ; rdfs:label "VAV 2 HW valve cmd" .
+ex:vav2_occ a s223:EnumeratedObservableProperty ; zea:pointRole zea:zoneOccupied ; rdfs:label "VAV 2 zone occupied" .

@@ -1,0 +1,187 @@
+# zea-profiles.ttl — ZandrEA application profiles (tool contracts) as SHACL node
+# shapes. One node shape per tool type. Each sh:property is a ROLE:
+#
+#   zea:roleName        the stable role id (== analysis-module RoleId; the witness key)
+#   sh:path             the finder — a zea-core virtual edge, never raw s223 plumbing
+#   sh:qualifiedValueShape  the disambiguator — zea:pointRole (+ optional quantity kind)
+#   sh:qualifiedMinCount 1  required; makes a missing role a validation violation
+#   zea:present         engine construction attributes (unit/range/plotGroup/valueKind)
+#
+# Discovery/extraction: PreparedValidator::witnesses(data, {key_path:"zea:roleName"})
+# returns, per conforming AHU/VAV focus node, each role's resolved value node.
+
+@prefix sh:            <http://www.w3.org/ns/shacl#> .
+@prefix s223:          <http://data.ashrae.org/standard223#> .
+@prefix qudt:          <http://qudt.org/schema/qudt/> .
+@prefix quantitykind:  <http://qudt.org/vocab/quantitykind/> .
+@prefix zea:           <urn:zandrea:tool-profile#> .
+@prefix rdfs:          <http://www.w3.org/2000/01/rdf-schema#> .
+
+#####################################################################
+# AHU profile (single-duct VAV-reheat AHU)
+#####################################################################
+
+zea:AhuProfile
+  a sh:NodeShape , zea:ApplicationProfile ;
+  rdfs:label "AHU (single-duct, VAV reheat)" ;
+  zea:toolProfileId "ahu_ibal" ;
+  zea:analysisModule "ahu_vav_reheat" ;
+  sh:targetClass s223:AirHandlingUnit ;
+
+  sh:property [ zea:roleName "name" ;
+     sh:path zea:name ; sh:minCount 1 ; sh:maxCount 1 ] ;
+
+  sh:property [ zea:roleName "outsideAirTemp" ;
+     sh:path zea:hasBoundPoint ;
+     sh:qualifiedValueShape [ sh:property [ sh:path zea:pointRole ; sh:hasValue zea:outsideAirTemp ] ] ;
+     sh:qualifiedMinCount 1 ; sh:qualifiedMaxCount 1 ;
+     zea:present [ zea:valueKind "analog" ; zea:unit "degC" ; zea:range "n18To49" ; zea:plotGroup "Free" ] ] ;
+
+  sh:property [ zea:roleName "returnAirTemp" ;
+     sh:path zea:hasBoundPoint ;
+     sh:qualifiedValueShape [ sh:property [ sh:path zea:pointRole ; sh:hasValue zea:returnAirTemp ] ] ;
+     sh:qualifiedMinCount 1 ; sh:qualifiedMaxCount 1 ;
+     zea:present [ zea:valueKind "analog" ; zea:unit "degC" ; zea:range "n18To49" ; zea:plotGroup "Free" ] ] ;
+
+  sh:property [ zea:roleName "mixedAirTemp" ;
+     sh:path zea:hasBoundPoint ;
+     sh:qualifiedValueShape [ sh:property [ sh:path zea:pointRole ; sh:hasValue zea:mixedAirTemp ] ] ;
+     sh:qualifiedMinCount 1 ; sh:qualifiedMaxCount 1 ;
+     zea:present [ zea:valueKind "analog" ; zea:unit "degC" ; zea:range "n18To49" ; zea:plotGroup "Free" ] ] ;
+
+  sh:property [ zea:roleName "supplyAirTemp" ;
+     sh:path zea:hasBoundPoint ;
+     sh:qualifiedValueShape [ sh:property [ sh:path zea:pointRole ; sh:hasValue zea:supplyAirTemp ] ] ;
+     sh:qualifiedMinCount 1 ; sh:qualifiedMaxCount 1 ;
+     zea:present [ zea:valueKind "analog" ; zea:unit "degC" ; zea:range "n18To49" ; zea:plotGroup "Free" ] ] ;
+
+  sh:property [ zea:roleName "supplyAirTempSetpt" ;
+     sh:path zea:hasBoundPoint ;
+     sh:qualifiedValueShape [ sh:property [ sh:path zea:pointRole ; sh:hasValue zea:supplyAirTempSetpt ] ] ;
+     sh:qualifiedMinCount 1 ; sh:qualifiedMaxCount 1 ;
+     zea:present [ zea:valueKind "analog" ; zea:unit "degC" ; zea:range "n18To49" ; zea:plotGroup "Free" ] ] ;
+
+  sh:property [ zea:roleName "supplyStaticPressure" ;
+     sh:path zea:hasBoundPoint ;
+     sh:qualifiedValueShape [ sh:property [ sh:path zea:pointRole ; sh:hasValue zea:supplyStaticPressure ] ] ;
+     sh:qualifiedMinCount 1 ; sh:qualifiedMaxCount 1 ;
+     zea:present [ zea:valueKind "analog" ; zea:unit "Pa" ; zea:range "zeroTo1k" ; zea:plotGroup "Free" ] ] ;
+
+  sh:property [ zea:roleName "supplyAirFlow" ;
+     sh:path zea:hasBoundPoint ;
+     sh:qualifiedValueShape [ sh:property [ sh:path zea:pointRole ; sh:hasValue zea:supplyAirFlow ] ] ;
+     sh:qualifiedMinCount 1 ; sh:qualifiedMaxCount 1 ;
+     zea:present [ zea:valueKind "analog" ; zea:unit "Lps" ; zea:range "zeroTo1k" ; zea:plotGroup "Free" ] ] ;
+
+  sh:property [ zea:roleName "mixingDamperCmd" ;
+     sh:path zea:hasBoundPoint ;
+     sh:qualifiedValueShape [ sh:property [ sh:path zea:pointRole ; sh:hasValue zea:mixingDamperCmd ] ] ;
+     sh:qualifiedMinCount 1 ; sh:qualifiedMaxCount 1 ;
+     zea:present [ zea:valueKind "analog" ; zea:unit "percent" ; zea:range "percent" ; zea:plotGroup "Free" ] ] ;
+
+  sh:property [ zea:roleName "chwValveCmd" ;
+     sh:path zea:hasBoundPoint ;
+     sh:qualifiedValueShape [ sh:property [ sh:path zea:pointRole ; sh:hasValue zea:chwValveCmd ] ] ;
+     sh:qualifiedMinCount 1 ; sh:qualifiedMaxCount 1 ;
+     zea:present [ zea:valueKind "analog" ; zea:unit "percent" ; zea:range "percent" ; zea:plotGroup "Free" ] ] ;
+
+  sh:property [ zea:roleName "hwValveCmd" ;
+     sh:path zea:hasBoundPoint ;
+     sh:qualifiedValueShape [ sh:property [ sh:path zea:pointRole ; sh:hasValue zea:hwValveCmd ] ] ;
+     sh:qualifiedMinCount 1 ; sh:qualifiedMaxCount 1 ;
+     zea:present [ zea:valueKind "analog" ; zea:unit "percent" ; zea:range "percent" ; zea:plotGroup "Free" ] ] ;
+
+  sh:property [ zea:roleName "systemOccupied" ;
+     sh:path zea:hasBoundPoint ;
+     sh:qualifiedValueShape [ sh:property [ sh:path zea:pointRole ; sh:hasValue zea:systemOccupied ] ] ;
+     sh:qualifiedMinCount 1 ; sh:qualifiedMaxCount 1 ;
+     zea:present [ zea:valueKind "binary" ; zea:plotGroup "Free" ] ] ;
+.
+
+#####################################################################
+# VAV profile (single-duct terminal with hot-water reheat)
+#####################################################################
+
+zea:VavProfile
+  a sh:NodeShape , zea:ApplicationProfile ;
+  rdfs:label "VAV (single-duct, HW reheat)" ;
+  zea:toolProfileId "vav_ibal" ;
+  zea:analysisModule "ahu_vav_reheat" ;
+  sh:targetClass s223:TerminalUnit ;
+
+  sh:property [ zea:roleName "name" ;
+     sh:path zea:name ; sh:minCount 1 ; sh:maxCount 1 ] ;
+
+  # antecedent role: the upstream AHU that feeds this terminal's primary air.
+  sh:property [ zea:roleName "airSource" ;
+     zea:requiredToolProfileId "ahu_ibal" ;
+     sh:path [ sh:oneOrMorePath zea:connectedFromEquipment ] ;
+     sh:qualifiedValueShape [ sh:class s223:AirHandlingUnit ] ;
+     sh:qualifiedMinCount 1 ] ;
+
+  sh:property [ zea:roleName "inletAirTemp" ;
+     sh:path zea:hasBoundPoint ;
+     sh:qualifiedValueShape [ sh:property [ sh:path zea:pointRole ; sh:hasValue zea:inletAirTemp ] ] ;
+     sh:qualifiedMinCount 1 ; sh:qualifiedMaxCount 1 ;
+     zea:present [ zea:valueKind "analog" ; zea:unit "degC" ; zea:range "n18To49" ; zea:plotGroup "Free" ] ] ;
+
+  sh:property [ zea:roleName "dischargeAirTemp" ;
+     sh:path zea:hasBoundPoint ;
+     sh:qualifiedValueShape [ sh:property [ sh:path zea:pointRole ; sh:hasValue zea:dischargeAirTemp ] ] ;
+     sh:qualifiedMinCount 1 ; sh:qualifiedMaxCount 1 ;
+     zea:present [ zea:valueKind "analog" ; zea:unit "degC" ; zea:range "n18To49" ; zea:plotGroup "Free" ] ] ;
+
+  sh:property [ zea:roleName "zoneAirTemp" ;
+     sh:path zea:hasBoundPoint ;
+     sh:qualifiedValueShape [ sh:property [ sh:path zea:pointRole ; sh:hasValue zea:zoneAirTemp ] ] ;
+     sh:qualifiedMinCount 1 ; sh:qualifiedMaxCount 1 ;
+     zea:present [ zea:valueKind "analog" ; zea:unit "degC" ; zea:range "n18To49" ; zea:plotGroup "Free" ] ] ;
+
+  sh:property [ zea:roleName "zoneTempSetptClg" ;
+     sh:path zea:hasBoundPoint ;
+     sh:qualifiedValueShape [ sh:property [ sh:path zea:pointRole ; sh:hasValue zea:zoneTempSetptClg ] ] ;
+     sh:qualifiedMinCount 1 ; sh:qualifiedMaxCount 1 ;
+     zea:present [ zea:valueKind "analog" ; zea:unit "degC" ; zea:range "n18To49" ; zea:plotGroup "Free" ] ] ;
+
+  sh:property [ zea:roleName "zoneTempSetptHtg" ;
+     sh:path zea:hasBoundPoint ;
+     sh:qualifiedValueShape [ sh:property [ sh:path zea:pointRole ; sh:hasValue zea:zoneTempSetptHtg ] ] ;
+     sh:qualifiedMinCount 1 ; sh:qualifiedMaxCount 1 ;
+     zea:present [ zea:valueKind "analog" ; zea:unit "degC" ; zea:range "n18To49" ; zea:plotGroup "Free" ] ] ;
+
+  sh:property [ zea:roleName "inletStaticPressure" ;
+     sh:path zea:hasBoundPoint ;
+     sh:qualifiedValueShape [ sh:property [ sh:path zea:pointRole ; sh:hasValue zea:inletStaticPressure ] ] ;
+     sh:qualifiedMinCount 1 ; sh:qualifiedMaxCount 1 ;
+     zea:present [ zea:valueKind "analog" ; zea:unit "Pa" ; zea:range "zeroTo1k" ; zea:plotGroup "Free" ] ] ;
+
+  sh:property [ zea:roleName "airFlow" ;
+     sh:path zea:hasBoundPoint ;
+     sh:qualifiedValueShape [ sh:property [ sh:path zea:pointRole ; sh:hasValue zea:airFlow ] ] ;
+     sh:qualifiedMinCount 1 ; sh:qualifiedMaxCount 1 ;
+     zea:present [ zea:valueKind "analog" ; zea:unit "Lps" ; zea:range "zeroTo1k" ; zea:plotGroup "Free" ] ] ;
+
+  sh:property [ zea:roleName "airFlowSetpt" ;
+     sh:path zea:hasBoundPoint ;
+     sh:qualifiedValueShape [ sh:property [ sh:path zea:pointRole ; sh:hasValue zea:airFlowSetpt ] ] ;
+     sh:qualifiedMinCount 1 ; sh:qualifiedMaxCount 1 ;
+     zea:present [ zea:valueKind "analog" ; zea:unit "Lps" ; zea:range "zeroTo1k" ; zea:plotGroup "Free" ] ] ;
+
+  sh:property [ zea:roleName "damperCmd" ;
+     sh:path zea:hasBoundPoint ;
+     sh:qualifiedValueShape [ sh:property [ sh:path zea:pointRole ; sh:hasValue zea:damperCmd ] ] ;
+     sh:qualifiedMinCount 1 ; sh:qualifiedMaxCount 1 ;
+     zea:present [ zea:valueKind "analog" ; zea:unit "percent" ; zea:range "percent" ; zea:plotGroup "Free" ] ] ;
+
+  sh:property [ zea:roleName "hwValveCmd" ;
+     sh:path zea:hasBoundPoint ;
+     sh:qualifiedValueShape [ sh:property [ sh:path zea:pointRole ; sh:hasValue zea:hwValveCmd ] ] ;
+     sh:qualifiedMinCount 1 ; sh:qualifiedMaxCount 1 ;
+     zea:present [ zea:valueKind "analog" ; zea:unit "percent" ; zea:range "percent" ; zea:plotGroup "Free" ] ] ;
+
+  sh:property [ zea:roleName "zoneOccupied" ;
+     sh:path zea:hasBoundPoint ;
+     sh:qualifiedValueShape [ sh:property [ sh:path zea:pointRole ; sh:hasValue zea:zoneOccupied ] ] ;
+     sh:qualifiedMinCount 1 ; sh:qualifiedMaxCount 1 ;
+     zea:present [ zea:valueKind "binary" ; zea:plotGroup "Free" ] ] ;
+.

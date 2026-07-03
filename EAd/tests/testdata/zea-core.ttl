@@ -1,0 +1,108 @@
+# zea-core.ttl — ZandrEA application-profile core vocabulary + SHACL-AF rules.
+#
+# Loaded as part of the shapes/rules graph. Its SHACL-AF rules run during the
+# shifty inference pass and "close over" the messy s223 structural patterns,
+# materializing clean virtual edges that the application-profile finders query:
+#
+#   zea:hasBoundPoint          equipment -> an observable/actuatable property it owns
+#   zea:connectedFromEquipment terminal unit -> the upstream equipment feeding it
+#
+# The finders in zea-profiles.ttl then never touch containment / channels / cnx;
+# they use these two edges plus zea:pointRole for disambiguation.
+
+@prefix sh:            <http://www.w3.org/ns/shacl#> .
+@prefix s223:          <http://data.ashrae.org/standard223#> .
+@prefix zea:           <urn:zandrea:tool-profile#> .
+@prefix rdf:           <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:          <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:           <http://www.w3.org/2001/XMLSchema#> .
+
+#####################################################################
+# Vocabulary
+#####################################################################
+
+zea:hasBoundPoint          a rdf:Property ; rdfs:label "has bound point" .
+zea:connectedFromEquipment a rdf:Property ; rdfs:label "connected from equipment" .
+zea:pointRole              a rdf:Property ; rdfs:label "point role" .
+zea:PointRole              a rdfs:Class .
+zea:ApplicationProfile     a rdfs:Class .
+
+# Shared SPARQL prefix declarations for the rules below.
+zea:corePrefixes
+  sh:declare [ sh:prefix "s223" ; sh:namespace "http://data.ashrae.org/standard223#"^^xsd:anyURI ] ;
+  sh:declare [ sh:prefix "zea"  ; sh:namespace "urn:zandrea:tool-profile#"^^xsd:anyURI ] ;
+.
+
+#####################################################################
+# Rule 1: zea:hasBoundPoint
+#
+# A property is "bound" to an equipment when it is observed / actuated at the
+# equipment itself, at something it s223:contains (any depth), or at one of its
+# s223:hasConnectionPoint nodes; or when the equipment declares it directly via
+# s223:hasProperty (setpoints).
+#####################################################################
+
+zea:BoundPointRule
+  a sh:NodeShape ;
+  sh:targetClass s223:AirHandlingUnit , s223:TerminalUnit ;
+  sh:rule [
+     a sh:SPARQLRule ;
+     sh:prefixes zea:corePrefixes ;
+     sh:construct """
+        CONSTRUCT {
+           $this zea:hasBoundPoint ?prop .
+        }
+        WHERE {
+           {
+              $this (s223:contains*|s223:hasConnectionPoint) ?loc .
+              {
+                 ?ch a s223:Sensor ;
+                     s223:hasObservationLocation ?loc ;
+                     s223:observes ?prop .
+              }
+              UNION
+              {
+                 ?ch a s223:Actuator ;
+                     s223:actuates ?loc ;
+                     s223:actuatedByProperty ?prop .
+              }
+           }
+           UNION
+           {
+              $this s223:hasProperty ?prop .
+           }
+        }
+     """ ;
+  ] ;
+.
+
+#####################################################################
+# Rule 2: zea:connectedFromEquipment
+#
+# A terminal unit is connected-from the equipment whose air outlet feeds its
+# air inlet, over the s223:cnx connection network (medium-filtered to air).
+#####################################################################
+
+zea:AirConnectivityRule
+  a sh:NodeShape ;
+  sh:targetClass s223:TerminalUnit ;
+  sh:rule [
+     a sh:SPARQLRule ;
+     sh:prefixes zea:corePrefixes ;
+     sh:construct """
+        CONSTRUCT {
+           $this zea:connectedFromEquipment ?upstream .
+        }
+        WHERE {
+           $this s223:hasConnectionPoint ?inCp .
+           ?inCp a s223:InletConnectionPoint ;
+                 s223:hasMedium s223:Fluid-Air .
+           ?conn s223:cnx ?inCp , ?outCp .
+           ?outCp a s223:OutletConnectionPoint ;
+                  s223:hasMedium s223:Fluid-Air .
+           ?upstream s223:hasConnectionPoint ?outCp .
+           FILTER( ?upstream != $this )
+        }
+     """ ;
+  ] ;
+.

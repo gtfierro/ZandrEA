@@ -37,9 +37,15 @@ make compile \
   SHIFTY_LIBS="-L/path/to/lib -lshifty_cpp -ldl -pthread -lm"
 ```
 
-If shifty flags are not provided, the loader falls back to the existing
-rdf4cpp parse/count path and logs that SHACL inference and validation were
-skipped.
+If shifty flags are not provided, `EA_HAVE_SHIFTY` is not defined and
+`LoadS223ApplicationStartupModel()` throws at startup if the two S223
+environment variables are set — there is no non-shifty fallback loader.
+(An earlier revision fell back to parsing/counting quads with `rdf4cpp`;
+`rdf4cpp` crashed on real ASHRAE 223 ontology content and has been removed
+from the codebase entirely, so this path no longer exists.) A build without
+shifty flags is still fine as long as the S223 environment variables are left
+unset, in which case ZandrEA uses the legacy default startup configuration
+instead.
 
 ## Docker and Podman
 
@@ -66,3 +72,18 @@ docker compose build \
   --build-arg SHIFTY_REF=main \
   rest
 ```
+
+## Property Witnesses
+
+As of shifty `5df3e9d`, `PreparedValidator::witnesses(dataset, options)` is
+available. It is the inverse of `validate()`: for every focus node that
+*conforms* to a target/profile node shape, it returns the value node(s) each
+`sh:property` shape's `sh:path` resolved to, narrowed by any
+`sh:qualifiedValueShape`. Set `ValidationOptions::key_path` (e.g.
+`"zea:roleName"`) to a SPARQL property path evaluated from each property shape's
+node to produce a stable `PropertyWitness::key`.
+
+This is the extraction mechanism the model-driven tool-contract architecture is
+built on — see `docs/tool-contract-design.md`. `SHIFTY_REF=main` in the
+container builds already includes it; local prefix installs must be rebuilt from
+a checkout at or past that commit.
