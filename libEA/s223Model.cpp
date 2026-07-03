@@ -8,6 +8,10 @@
 
 #include <rdf4cpp/parser/RDFFileParser.hpp>
 
+#ifdef EA_HAVE_SHIFTY
+#include <shifty/shifty.hpp>
+#endif
+
 #include <cstdlib>
 #include <filesystem>
 #include <sstream>
@@ -52,6 +56,48 @@ S223FileLoadSummary load_turtle_file(const std::string& path) {
    return { path, quadCount };
 }
 
+S223ShaclSummary run_shacl_inference_and_validation(const S223ModelLoadConfig& config) {
+#ifdef EA_HAVE_SHIFTY
+   require_readable_file(config.ontologyTurtlePath);
+   require_readable_file(config.siteTurtlePath);
+
+   auto validator = shifty::PreparedValidator::from_file(
+      config.ontologyTurtlePath,
+      shifty::RdfFormat::Turtle
+   );
+
+   shifty::Dataset dataset;
+   dataset.load_file(config.siteTurtlePath, shifty::RdfFormat::Turtle);
+
+   shifty::ValidationOptions options;
+   options.graph_mode = shifty::GraphMode::Union;
+   options.run_inference = true;
+
+   const auto validation = validator.validate(dataset, options);
+
+   return {
+      true,
+      true,
+      true,
+      validation.conforms(),
+      validator.diagnostics_json(),
+      validation.results_text(),
+      validation.report_turtle()
+   };
+#else
+   (void)config;
+   return {
+      false,
+      false,
+      false,
+      false,
+      "",
+      "",
+      ""
+   };
+#endif
+}
+
 } // namespace
 
 std::size_t S223ModelLoadSummary::TotalQuadCount(void) const {
@@ -79,7 +125,8 @@ std::optional<S223ModelLoadConfig> ReadS223ModelLoadConfigFromEnvironment(void) 
 S223ModelLoadSummary LoadS223ModelFromTurtleFiles(const S223ModelLoadConfig& config) {
    return {
       load_turtle_file(config.ontologyTurtlePath),
-      load_turtle_file(config.siteTurtlePath)
+      load_turtle_file(config.siteTurtlePath),
+      run_shacl_inference_and_validation(config)
    };
 }
 

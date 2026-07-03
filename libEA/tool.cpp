@@ -3810,6 +3810,22 @@ CApplication::CApplication( void )
                 << " (" << s223Summary.ontology.quadCount << " quads) and site model from "
                 << s223Summary.site.path << " (" << s223Summary.site.quadCount
                 << " quads); total quads: " << s223Summary.TotalQuadCount() << std::endl;
+      if (s223Summary.shacl.engineAvailable) {
+         std::cout << "Ran ASHRAE 223 SHACL-AF inference and SHACL validation with shifty; conforms: "
+                   << (s223Summary.shacl.conforms ? "yes" : "no") << std::endl;
+         if (!s223Summary.shacl.diagnosticsJson.empty()
+             && s223Summary.shacl.diagnosticsJson != "[]") {
+            std::cout << "ASHRAE 223 SHACL diagnostics: "
+                      << s223Summary.shacl.diagnosticsJson << std::endl;
+         }
+         if (!s223Summary.shacl.conforms
+             && !s223Summary.shacl.resultsText.empty()) {
+            std::cout << s223Summary.shacl.resultsText << std::endl;
+         }
+      } else {
+         std::cout << "ASHRAE 223 SHACL inference and validation skipped; build without shifty"
+                   << std::endl;
+      }
    }
 
 

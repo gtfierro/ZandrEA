@@ -25,6 +25,10 @@ ENV HOME=${home}
 ENV PKGROOT=${home}
 RUN DEBIAN_FRONTEND="noninteractive" apt install -y \
     build-essential \
+    ca-certificates \
+    cmake \
+    curl \
+    git \
     libaec-dev \
     nodejs \
     python3-pip \
@@ -40,21 +44,33 @@ RUN make compiler NATIVE_CC=gcc-14 NATIVE_CXX=g++-14
 FROM prod_buildbase AS prod_appbuilder
 LABEL maintainer="Steve Barber <steve.barber@nist.gov>"
 ARG home=/ea
+ARG SHIFTY_REPO=https://github.com/gtfierro/shifty.git
+ARG SHIFTY_REF=main
 ENV HOME=${home}
 ENV PKGROOT=${home}
-ENV PATH $PKGROOT/HDF5/bin:$PATH
+ENV SHIFTY_PREFIX=${home}/shifty
+ENV PATH ${home}/.cargo/bin:$PKGROOT/HDF5/bin:$PATH
 WORKDIR $PKGROOT
+RUN curl -fsS https://sh.rustup.rs | \
+    sh -s -- -y --profile minimal --default-toolchain stable
+RUN git clone --depth 1 --branch "$SHIFTY_REF" "$SHIFTY_REPO" shifty-src && \
+    cmake -S shifty-src/cpp -B shifty-src/build/cpp \
+      -DSHIFTY_CPP_BUILD_TESTS=OFF \
+      -DCMAKE_INSTALL_PREFIX="$SHIFTY_PREFIX" && \
+    CARGO_BUILD_JOBS="$(nproc)" cmake --build shifty-src/build/cpp --target shifty_rust_build --parallel "$(nproc)" && \
+    cmake --install shifty-src/build/cpp
 COPY conanfile.txt ./
 RUN conan profile detect --force && \
     conan remote add dice-group https://conan.dice-research.org/artifactory/api/conan/tentris && \
     CC=gcc-14 CXX=g++-14 conan install . --output-folder=conan --build=missing \
+      -c tools.build:jobs="$(nproc)" \
       -s compiler.cppstd=20 \
       -s compiler.version=14 \
       -s compiler.libcxx=libstdc++11 \
       -o '*:shared=False'
 COPY libEA ./libEA/
 COPY EAd ./EAd/
-RUN make build-ead NATIVE_CC=gcc-14 NATIVE_CXX=g++-14
+RUN make build-ead NATIVE_CC=gcc-14 NATIVE_CXX=g++-14 SHIFTY_PREFIX="$SHIFTY_PREFIX"
 
 FROM prod_baseos
 LABEL maintainer="Steve Barber <steve.barber@nist.gov>"

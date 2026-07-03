@@ -16,6 +16,16 @@ struct S223FileLoadSummary {
    std::size_t quadCount;
 };
 
+struct S223ShaclSummary {
+   bool engineAvailable;
+   bool inferenceRun;
+   bool validationRun;
+   bool conforms;
+   std::string diagnosticsJson;
+   std::string resultsText;
+   std::string reportTurtle;
+};
+
 struct S223ModelLoadConfig {
    std::string ontologyTurtlePath;
    std::string siteTurtlePath;
@@ -24,6 +34,7 @@ struct S223ModelLoadConfig {
 struct S223ModelLoadSummary {
    S223FileLoadSummary ontology;
    S223FileLoadSummary site;
+   S223ShaclSummary shacl;
 
    std::size_t TotalQuadCount(void) const;
 };

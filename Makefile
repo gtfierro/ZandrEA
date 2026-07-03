@@ -25,7 +25,11 @@ DOCKER_PROJECT ?= zandrea
 DOCKER_IMAGE_PREFIX ?=
 DOCKER_IMAGE_SUFFIX ?= _prod
 
-.PHONY:	all _all compile build build-ead rebuild recompile clean test pytest docker-build docker-rerun docker-up docker-down docker-status docker-prune docker-rm-kb docker-retest docker-test docker-production-build docker-production-up docker-production-down docker-production-retest docker-production-save docker-production-push jscli pushtestdata install reinstall compiler dist-clean
+# Podman (rootless) uses a dedicated compose file that swaps Traefik for nginx
+# (no docker.sock mount) and replaces legacy "links:" with network aliases.
+PODMAN_COMPOSE ?= podman compose -f docker-compose.podman.yml
+
+.PHONY:	all _all compile build build-ead rebuild recompile clean test pytest docker-build docker-rerun docker-up docker-down docker-status docker-prune docker-rm-kb docker-retest docker-test docker-production-build docker-production-up docker-production-down docker-production-retest docker-production-save docker-production-push podman-build podman-up podman-down podman-rerun podman-status podman-test jscli pushtestdata install reinstall compiler dist-clean
 
 # (SWB) I commented out .NOTPARALLEL because I discovered the .WAIT special target. (May be
 # specific only to GNU make...?)  This gives better control over dependency processing than
@@ -106,7 +110,7 @@ export NPROC := $(shell sysctl -n hw.logicalcpu)
 else
 export NPROC := $(shell nproc)
 endif
-export JOBS := $(shell expr $(NPROC) + 2) 
+export JOBS := $(NPROC)
 MAKEFLAGS += --jobs=$(JOBS)
 
 export PATH := $(CURDIR)/HDF5/bin:$(PATH)
@@ -138,6 +142,27 @@ docker-debug:
 docker-down:
 	-docker compose down
 
+# Rootless-podman equivalents of the docker-* targets above. They use the
+# podman compose file, so no Traefik/docker.sock and no "links:". The bacnet
+# service is gated behind a compose profile; add it with: --profile bacnet
+podman-build:
+	$(PODMAN_COMPOSE) build
+
+podman-up:
+	$(PODMAN_COMPOSE) up --build --detach
+
+podman-down:
+	-$(PODMAN_COMPOSE) down
+
+podman-status:
+	$(PODMAN_COMPOSE) ps
+
+podman-rerun:	podman-down .WAIT podman-up
+
+podman-test:
+	$(PODMAN_COMPOSE) up --build --detach rest
+	$(PODMAN_COMPOSE) run --rm --no-deps --entrypoint sh --volume "$(CURDIR):/work" --workdir /work bacnet -lc 'python -m pip install -q -r EAd/tests/requirements.txt && PYTHONDONTWRITEBYTECODE=1 EA_HOST=rest EA_PORT=9876 python -m pytest $(PYTEST_ARGS) -o cache_dir=/tmp/pytest-cache --cache-clear'
+
 docker-rerun:	docker-down .WAIT docker-up
 
 docker-restart:	docker-down .WAIT docker-up
@@ -156,6 +181,7 @@ docker-rm-kb:
 docker-retest:	docker-down .WAIT docker-rm-kb .WAIT docker-up .WAIT pushtestdata
 
 docker-test:
+	docker compose up --build --detach rest
 	docker compose run --rm --no-deps --entrypoint sh --volume "$(CURDIR):/work" --workdir /work bacnet -lc 'python -m pip install -q -r EAd/tests/requirements.txt && PYTHONDONTWRITEBYTECODE=1 EA_HOST=rest EA_PORT=9876 python -m pytest $(PYTEST_ARGS) -o cache_dir=/tmp/pytest-cache --cache-clear'
 
 docker-clean:	docker-down .WAIT docker-rm-kb
@@ -300,8 +326,14 @@ endif
 CONAN_GENERATORS_DIR ?= $(PREFIX)/conan
 RDF4CPP_CFLAGS := $(shell PKG_CONFIG_PATH=$(CONAN_GENERATORS_DIR):$${PKG_CONFIG_PATH} pkg-config --cflags rdf4cpp 2>/dev/null)
 RDF4CPP_LIBS := $(shell PKG_CONFIG_PATH=$(CONAN_GENERATORS_DIR):$${PKG_CONFIG_PATH} pkg-config --libs rdf4cpp 2>/dev/null)
+SHIFTY_PREFIX ?=
+SHIFTY_CFLAGS ?= $(if $(SHIFTY_PREFIX),-I$(SHIFTY_PREFIX)/include,)
+SHIFTY_LIBS ?= $(if $(SHIFTY_PREFIX),-L$(SHIFTY_PREFIX)/lib -lshifty_cpp -ldl -pthread -lm,)
+ifneq ($(strip $(SHIFTY_CFLAGS)$(SHIFTY_LIBS)),)
+SHIFTY_DEFS := -DEA_HAVE_SHIFTY
+endif
 
-INCLUDES = -I$(PREFIX)/libEA -I$(PREFIX)/include -I$(HDF5INSTALLDIR)/include $(HB_INCLUDES) $(RDF4CPP_CFLAGS)
+INCLUDES = -I$(PREFIX)/libEA -I$(PREFIX)/include -I$(HDF5INSTALLDIR)/include $(HB_INCLUDES) $(RDF4CPP_CFLAGS) $(SHIFTY_CFLAGS)
 
 INCLUDES += -I$(PREFIX)/grpc/include -I$(PREFIX)/protobuf
 #bad way was += $(addprefix -I,$(shell find $(PREFIX)/grpc/include -type d)) -I$(PREFIX)/protobuf
@@ -332,6 +364,7 @@ EAD_DEPS := $(EAD_SRCS:.cpp=.d)
 EAD_LIBS := -L$(HDF5INSTALLDIR)/lib \
             -L./lib $(HB_LDFLAGS) \
             $(RDF4CPP_LIBS) \
+            $(SHIFTY_LIBS) \
             -lcpprest $(BOOSTLIBS) \
             -lhdf5 \
             -lsz \
@@ -402,7 +435,7 @@ bin:
 #==================================================================================================C====5
 # Extending these flags
 
-CXXFLAGS += -std=c++20 -g -O $(CXX_FEATURE_FLAGS) $(CXXOPTS) $(DEFS) $(INCLUDES)
+CXXFLAGS += -std=c++20 -g -O $(CXX_FEATURE_FLAGS) $(CXXOPTS) $(DEFS) $(SHIFTY_DEFS) $(INCLUDES)
 LDFLAGS += -g
 
 #VVVVVVVV1VVVVVVVVV2VVVVVVVVV3VVVVVVVVV4VVVVVVVVV5VVVVVVVVV6VVVVVVVVV7VVVVVVVVV8VVVVVVVVV9VVVVVVVVVCVVVV5
@@ -410,7 +443,7 @@ LDFLAGS += -g
 # For e.g., calling at host CLI a debug target not in NODEPS yields a hailstorm 10K+ line error log!
 # That happens because deps are installed into Docker stages but not installed onto the host computer.
 
-NODEPS = docker-debug docker-down docker-up docker-run docker-rerun docker-build docker-restart docker-status docker-prune docker-rm-kb docker-retest docker-test docker-clean docker-production-build docker-production-up docker-production-down docker-production-retest docker-production-save docker-production-push clean dist-clean tags svn pushtestdata
+NODEPS = docker-debug docker-down docker-up docker-run docker-rerun docker-build docker-restart docker-status docker-prune docker-rm-kb docker-retest docker-test docker-clean docker-production-build docker-production-up docker-production-down docker-production-retest docker-production-save docker-production-push podman-build podman-up podman-down podman-rerun podman-status podman-test clean dist-clean tags svn pushtestdata
 ifeq (0, $(words $(findstring $(MAKECMDGOALS), $(NODEPS))))
     #Chances are, these files don't exist.  GMake will create them and
     #clean up automatically afterwards

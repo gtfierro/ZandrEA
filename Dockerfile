@@ -1,3 +1,4 @@
+#syntax=docker/dockerfile:1.7
 #XXXXXXXX1XXXXXXXXX2XXXXXXXXX3XXXXXXXXX4XXXXXXXXX5XXXXXXXXX6XXXXXXXXX7XXXXXXXXX8XXXXXXXXX9XXXXXXXXXCXXXX5
 # ZandrEA repo root directory multi-stage Dockerfile: builds image that runs as the "ea-rest" container.
 # Each FROM starts a "stage"; each COPY, ADD, and RUN caches a "layer" credited to rebuilds if unedited.
@@ -40,11 +41,18 @@ ENV HOME=${home}
 ENV PKGROOT=${home}
  
 RUN apt update && DEBIAN_FRONTEND="noninteractive" apt install -y \
+    ccache \
     libaec-dev \
     nodejs \
     python3-pip \
     pkg-config \
   && rm -rf /var/lib/apt/lists/*
+ENV CCACHE_DIR=/root/.cache/ccache \
+    CCACHE_BASEDIR=${home} \
+    CCACHE_COMPILERCHECK=content \
+    CCACHE_NOHASHDIR=true \
+    HDF5_CXX="ccache g++-14" \
+    HDF5_CLINKER=g++-14
 RUN pip3 install --break-system-packages "conan>=2,<3"
 RUN mkdir -p /ea/include/ea /ea/lib/ea /ea/bin /data
 ENV PATH=$PKGROOT/HDF5/bin:$PATH
@@ -77,15 +85,20 @@ RUN apt-get install -y cmake
 FROM buildbase AS appbuilder
 LABEL maintainer="Steve Barber <steve.barber@nist.gov>"
 ARG home=/ea
+ARG SHIFTY_REPO=https://github.com/gtfierro/shifty.git
+ARG SHIFTY_REF=main
 ENV HOME=${home}
 ENV PKGROOT=${home}
-ENV PATH=$PKGROOT/HDF5/bin:$PATH
+ENV SHIFTY_PREFIX=${home}/shifty
+ENV PATH=${home}/.cargo/bin:$PKGROOT/HDF5/bin:$PATH
 WORKDIR $PKGROOT
 #==================================================================================================C====5
 # DAV - BEGIN - gRPC C++ install, per site: https://grpc.io/docs/languages/cpp/quickstart/ on 260218
 # Install gRPC dependencies while at $PKGROOT
 RUN apt install -y autoconf libtool pkg-config libsystemd-dev
 RUN apt-get update && apt-get install -y git
+RUN wget -qO- https://sh.rustup.rs | \
+      sh -s -- -y --profile minimal --default-toolchain stable
 # Create directory for gRPC src code and switch pwd to it
 WORKDIR $PKGROOT/grpc/grpc-src/
 # Clone gRPC src code into current directory ("." at end)
@@ -103,7 +116,7 @@ RUN cmake -DgRPC_INSTALL=ON \
       -DCMAKE_INSTALL_PREFIX=$PKGROOT/grpc \
       ../grpc-src
 # Call the focused Makefile that CMake generated to build/install gRPC per the happy build environment
-RUN make -j 4 && make install
+RUN make -j"$(nproc)" && make install
 # Copy dir from host holding Protobuf .proto file and C++ and Python stub codes Protoc compiled off-line
 # [Location on host (first argument of COPY) is relative to directory holding this Dockerfile]
 WORKDIR $PKGROOT
@@ -112,12 +125,23 @@ COPY ./protobuf/  $PKGROOT/protobuf/
 ENV PATH=$PATH:$PKGROOT/grpc/bin:$PKGROOT/protobuf
 # DAV - END - gRPC (C++ side) install
 #==================================================================================================C====5
+# Build and install shifty C++ SDK. The final ead link is static, so the
+# runtime image does not need the SDK tree copied into it.
+WORKDIR $PKGROOT/shifty-src
+RUN git clone --depth 1 --branch "$SHIFTY_REF" "$SHIFTY_REPO" . && \
+    cmake -S cpp -B build/cpp \
+      -DSHIFTY_CPP_BUILD_TESTS=OFF \
+      -DCMAKE_INSTALL_PREFIX="$SHIFTY_PREFIX" && \
+    CARGO_BUILD_JOBS="$(nproc)" cmake --build build/cpp --target shifty_rust_build --parallel "$(nproc)" && \
+    cmake --install build/cpp
+#==================================================================================================C====5
 # Build "ead" executable
 WORKDIR $PKGROOT
 COPY conanfile.txt ./
 RUN conan profile detect --force && \
     conan remote add dice-group https://conan.dice-research.org/artifactory/api/conan/tentris && \
     CC=gcc-14 CXX=g++-14 conan install . --output-folder=conan --build=missing \
+      -c tools.build:jobs="$(nproc)" \
       -s compiler.cppstd=20 \
       -s compiler.version=14 \
       -s compiler.libcxx=libstdc++11 \
@@ -125,7 +149,9 @@ RUN conan profile detect --force && \
 COPY libEA ./libEA/
 COPY EAd ./EAd/
 # Call stage's copy of root Makefile; "build-ead" is phony label of rule building executable /ea/bin/ead
-RUN make build-ead NATIVE_CC=gcc-14 NATIVE_CXX=g++-14
+RUN --mount=type=cache,target=/root/.cache/ccache \
+    ccache --set-config=max_size=5G && \
+    make build-ead NATIVE_CC=gcc-14 NATIVE_CXX=g++-14 SHIFTY_PREFIX="$SHIFTY_PREFIX"
 
 FROM baseos
 LABEL maintainer="Steve Barber <steve.barber@nist.gov>"
