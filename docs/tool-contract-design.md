@@ -298,17 +298,43 @@ reimplement the FDD against roles once, producing the same `CFact`/`CRule`/
 `CSubject`/`CView` graph the engine runs — so nothing about the legacy stack
 needs to be preserved bug-for-bug.
 
-## 10. Open work
+## 10. Implementation status
 
-- Implement the assembler in `libEA/s223Model.*`: witnesses → grouped candidates
-  → `RoleBoundPoints`; topological antecedent ordering; the `zea:present` →
-  engine-enum vocabulary bridge.
-- Implement `RoleId`/`RoleSpec`/`RoleBoundPoints`/`IAnalysisModule` and the
-  `AhuVavReheatModule` (AHU + VAV FDD against roles).
-- Thread the bound RDF property/channel identity into the point objects for
-  data ingestion.
-- Decide the new entrypoint trigger (`CApplicationFromProfiles` vs. env switch)
-  and expose the witness/validation result over the existing `/s223/*` debug
-  endpoints.
+The **RDF → resolved-tool half is implemented and proven** (`libEA`, built into
+`ead` via the `libEA/*.cpp` wildcard; standalone harness
+`EAd/tests/assembler_probe.cpp`):
+
+- `libEA/toolRole.hpp` — `RoleId`, `PointRoleSpec`, `AntecedentRoleSpec`,
+  `ModuleManifest`, and the `RoleWitness` → `ResolvedTool`/`ResolvedToolModel`
+  types. Depends only on the leaf engine enums (`customTypes.hpp`), no shifty.
+- `libEA/analysisModule.{hpp,cpp}` — `IAnalysisModule` + `CModuleRegistry` keyed
+  by profile node-shape IRI (== witness `shape_id`).
+- `libEA/toolModules.cpp` — the built-in `CAhuModule`/`CVavModule` manifests. Each
+  role carries the exact `EPointName`/`EDataLabel`/`EDataUnit`/`EDataRange`/
+  `EPlotGroup` tuple from the legacy `CTool_*` constructor, so resolved points are
+  identical to today's build.
+- `libEA/toolAssembler.{hpp,cpp}` — `AssembleTools(witnesses, registry)`: group by
+  focus, dispatch to module by shape IRI, reconcile witness bindings against the
+  manifest, resolve antecedents, topologically order (Kahn), emit diagnostics.
+
+`assembler_probe` against the test model assembles 3 tools in antecedent-safe
+order (AHU-1 → VAV-1, VAV-2), all 22 point roles reconciled and bound to their
+RDF properties, VAV `airSource` → AHU_1, zero diagnostics — confirming the module
+role names match the profile `zea:roleName`s (reconciliation) and the ordering.
+
+### Remaining work (the engine-instantiation half)
+
+- Add `IAnalysisModule::Build(RoleBoundPoints&, BuildContext&)` and a
+  `RoleBoundPoints` that owns the constructed `CPointAnalog`/`CPointBinary` per
+  role (built from each `PointRoleSpec`'s engine tuple), fetched by `RoleId`.
+- Implement `CAhuModule::Build`/`CVavModule::Build`: the FDD facts/rules against
+  roles (the reimplementation of the `CTool_*` constructor bodies).
+- The witness runner currently in `EAd/tests/assembler_probe.cpp` moves into
+  `libEA/s223Model.*`; a new entrypoint (`CApplicationFromProfiles` vs. env
+  switch) drives assembler → per-tool `Build` in order, under a `CDomain`.
+- Thread each `ResolvedPointBinding::rdfProperty` into its point object for
+  channel-native data ingestion.
+- Expose the resolved model + `validate()` diagnostics over the `/s223/*`
+  debug endpoints.
 - A strategy for real (unannotated) models: authoring `zea:pointRole` at
   commissioning vs. deriving some roles from native `s223:hasRole` / topology.
