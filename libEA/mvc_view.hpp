@@ -108,6 +108,8 @@ class CView {
       std::string                SayS223ValidationReportTurtle( void ) const;
       std::string                SayS223ValidationResultsText( void ) const;
       std::string                SayS223ValidationDiagnosticsJson( void ) const;
+      std::vector<S223ValidationResultRecord> SayS223ValidationResults( void ) const;
+      S223AlgebraValidationSummary SayS223AlgebraValidationSummary( void ) const;
       std::string                SayS223SiteGraphNTriples( bool inferred ) const;
       S223ToolDiagnosticReport    SayS223ToolConfigurationReport( void ) const;
 

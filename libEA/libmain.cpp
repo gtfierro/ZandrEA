@@ -16,18 +16,19 @@ See the License for the specific language governing permissions and limitations 
 
 #include "tool.hpp"
 
-// 
+//
 // LibMain()
 //
-// This function is a vestigial remnant of a time when this code was originally written as a Windows DLL.
+// Initialize the EA application once for process lifetime. EAd/main.cpp calls
+// this explicitly after normal C++ static initialization has completed, so
+// startup model discovery does not run from a dynamic-loader constructor.
 //
-// Its purpose is to instantiate and initialize some dynamic resources at library load time.
-//
-// See also the code in ../EAd/main.cpp that references this function (forcing the linker to link it in to the executable)
-// 
-void __attribute__((constructor)) LibMain(void) {
+void LibMain(void) {
 
-   CApplication* p_eaAppInstance = new CApplication();
+   static CApplication* p_eaAppInstance = nullptr;
+   if (p_eaAppInstance == nullptr) {
+      p_eaAppInstance = new CApplication();
+   }
 }
 
 //END-OF-FILE ZZZZZ2ZZZZZZZZZ3ZZZZZZZZZ4ZZZZZZZZZ5ZZZZZZZZZ6ZZZZZZZZZ7ZZZZZZZZZ8ZZZZZZZZZ9ZZZZZZZZZCZZZZZ

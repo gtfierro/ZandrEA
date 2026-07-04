@@ -111,10 +111,9 @@ int main(int argc, char **argv) {
    // NOTE: SWB: TODO: default is 40, min is 2 (hangs with 1) - reduced to ease debugging!
    crossplat::threadpool::initialize_with_threads(5);
 
-   // Initialize the EA library
-   // Need to reference the library's init function here so it gets linked, otherwise it won't be called
+   // Initialize the EA library before asking for the exported port pointer.
    void LibMain(void);
-   void (*f)() = LibMain;
+   LibMain();
    tool = (IExportOmni *)NULL;
 
    po::variables_map vm;

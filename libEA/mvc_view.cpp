@@ -420,6 +420,22 @@ std::string CView::SayS223ValidationDiagnosticsJson( void ) const {
    return startupModel.has_value() ? startupModel->loadSummary.shacl.diagnosticsJson : "";
 }
 
+std::vector<S223ValidationResultRecord> CView::SayS223ValidationResults( void ) const {
+
+   const auto& startupModel = DomainRef.SayS223StartupModel();
+   return startupModel.has_value()
+      ? startupModel->loadSummary.shacl.results
+      : std::vector<S223ValidationResultRecord>{};
+}
+
+S223AlgebraValidationSummary CView::SayS223AlgebraValidationSummary( void ) const {
+
+   const auto& startupModel = DomainRef.SayS223StartupModel();
+   return startupModel.has_value()
+      ? startupModel->loadSummary.shacl.algebra
+      : S223AlgebraValidationSummary{};
+}
+
 std::string CView::SayS223SiteGraphNTriples( bool inferred ) const {
 
    const auto& startupModel = DomainRef.SayS223StartupModel();

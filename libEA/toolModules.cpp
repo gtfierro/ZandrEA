@@ -15,13 +15,8 @@
 
 namespace {
 
-// NOTE: deliberately NOT a namespace-scope `const std::string`. LibMain() is an
-// __attribute__((constructor)) that constructs CApplication (and thus runs S223
-// startup, including module registration) during dynamic initialization -- before
-// a std::string global in this TU is guaranteed initialized. A stale/empty prefix
-// there silently mis-keys the registry. The profile shape IRIs are written as
-// literals so they are correct at load time. (Same lesson as BuiltInToolProfiles;
-// see docs/tool-rdf-requirements.md.)
+// The profile shape IRIs are written as literals so the registry keys stay
+// independent of global initialization order.
 
 PointRoleSpec Analog(const char* role, EPointName pointName) {
    return { RoleId{ role }, RoleValueKind::Analog, pointName, true };

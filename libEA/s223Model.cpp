@@ -19,6 +19,7 @@
 #include <functional>
 #include <iostream>
 #include <iterator>
+#include <cctype>
 #include <map>
 #include <set>
 #include <sstream>
@@ -29,6 +30,7 @@ namespace {
 const char* const S223_ONTOLOGY_ENV = "EA_S223_ONTOLOGY_TTL";
 const char* const S223_SITE_ENV = "EA_S223_SITE_TTL";
 const char* const S223_PROFILE_SHAPES_ENV = "EA_S223_PROFILE_SHAPES_TTL";  // ':'-separated
+const char* const QUDT_ALL_TURTLE_FILENAME = "qudt-all.ttl";
 const char* const STARTUP_PROFILE_IRI = "urn:zandrea:s223-startup#profile";
 const char* const STARTUP_NAME_IRI = "urn:zandrea:s223-startup#name";
 const char* const STARTUP_ANTECEDENT_PREFIX = "urn:zandrea:s223-startup#antecedent/";
@@ -64,6 +66,23 @@ struct S223DiagnosticEquipmentMatch {
    std::set<std::string> boundPointNames;
 };
 
+struct S223WitnessDiscoveryResult {
+   ResolvedToolModel model;
+   std::vector<S223ToolStartupSpec> tools;
+   S223ToolDiagnosticReport diagnosticReport;
+};
+
+struct S223WitnessDiagnosticMatch {
+   std::string focusNode;
+   std::string shapeId;
+   std::map<std::string, std::vector<std::string> > byRole;
+};
+
+struct TurtleToken {
+   std::string text;
+   bool literal = false;
+};
+
 std::optional<std::string> getenv_string(const char* name) {
    const char* value = std::getenv(name);
    if (value == nullptr || value[0] == '\0') {
@@ -78,6 +97,38 @@ void require_readable_file(const std::string& path) {
       msg << "S223 Turtle file is not readable as a regular file: " << path;
       throw std::runtime_error(msg.str());
    }
+}
+
+std::vector<std::string> default_s223_shape_paths(const std::string& ontologyTurtlePath) {
+   std::vector<std::string> paths;
+   paths.push_back(ontologyTurtlePath);
+
+   const auto ontologyPath = std::filesystem::path(ontologyTurtlePath);
+   const auto qudtPath = ontologyPath.parent_path() / QUDT_ALL_TURTLE_FILENAME;
+   paths.push_back(qudtPath.string());
+
+   return paths;
+}
+
+std::string join_paths_for_display(const std::vector<std::string>& paths) {
+   std::ostringstream out;
+   for (std::size_t i = 0; i < paths.size(); ++i) {
+      if (i != 0) {
+         out << ":";
+      }
+      out << paths[i];
+   }
+   return out.str();
+}
+
+std::string read_turtle_files(const std::vector<std::string>& paths) {
+   std::ostringstream combined;
+   for (const auto& path : paths) {
+      require_readable_file(path);
+      std::ifstream in(path);
+      combined << in.rdbuf() << "\n";
+   }
+   return combined.str();
 }
 
 std::string unescape_ntriples_literal(std::string value) {
@@ -153,25 +204,298 @@ bool parse_ntriples_object(const std::string& line, std::size_t& pos, std::strin
    return false;
 }
 
+std::string unwrap_witness_term(const std::string& term) {
+   if (term.size() >= 2 && term.front() == '<' && term.back() == '>') {
+      return term.substr(1, term.size() - 2);
+   }
+   if (!term.empty() && term.front() == '"') {
+      const auto close = term.find('"', 1);
+      if (close != std::string::npos) {
+         return term.substr(1, close - 1);
+      }
+   }
+   return term;
+}
+
+std::string unescape_turtle_string(const std::string& value) {
+   std::string unescaped;
+   unescaped.reserve(value.size());
+   for (std::size_t i = 0; i < value.size(); ++i) {
+      if (value[i] == '\\' && i + 1 < value.size()) {
+         const char next = value[++i];
+         switch (next) {
+            case 'n': unescaped.push_back('\n'); break;
+            case 'r': unescaped.push_back('\r'); break;
+            case 't': unescaped.push_back('\t'); break;
+            case '"': unescaped.push_back('"'); break;
+            case '\\': unescaped.push_back('\\'); break;
+            default:
+               unescaped.push_back(next);
+               break;
+         }
+      } else {
+         unescaped.push_back(value[i]);
+      }
+   }
+   return unescaped;
+}
+
+bool is_turtle_punctuation(char ch) {
+   return ch == ';' || ch == ',' || ch == '.' || ch == '[' || ch == ']';
+}
+
+std::vector<TurtleToken> tokenize_validation_report_turtle(const std::string& turtle) {
+   std::vector<TurtleToken> tokens;
+   std::size_t i = 0;
+
+   while (i < turtle.size()) {
+      const unsigned char ch = static_cast<unsigned char>(turtle[i]);
+      if (std::isspace(ch)) {
+         ++i;
+         continue;
+      }
+      if (turtle[i] == '#') {
+         while (i < turtle.size() && turtle[i] != '\n') {
+            ++i;
+         }
+         continue;
+      }
+      if (is_turtle_punctuation(turtle[i])) {
+         tokens.push_back({ std::string(1, turtle[i]), false });
+         ++i;
+         continue;
+      }
+      if (turtle[i] == '<') {
+         const auto start = i++;
+         while (i < turtle.size() && turtle[i] != '>') {
+            ++i;
+         }
+         if (i < turtle.size()) {
+            ++i;
+         }
+         tokens.push_back({ turtle.substr(start, i - start), false });
+         continue;
+      }
+      if (turtle[i] == '"') {
+         ++i;
+         std::string literal;
+         bool escaped = false;
+         while (i < turtle.size()) {
+            const char c = turtle[i++];
+            if (c == '"' && !escaped) {
+               break;
+            }
+            literal.push_back(c);
+            escaped = (c == '\\' && !escaped);
+            if (c != '\\') {
+               escaped = false;
+            }
+         }
+         tokens.push_back({ unescape_turtle_string(literal), true });
+
+         // Skip language/datatype suffixes; the endpoint exposes the lexical
+         // message text and does not need the literal's RDF datatype.
+         if (i < turtle.size() && turtle[i] == '@') {
+            while (i < turtle.size()
+                   && !std::isspace(static_cast<unsigned char>(turtle[i]))
+                   && !is_turtle_punctuation(turtle[i])) {
+               ++i;
+            }
+         } else if (i + 1 < turtle.size() && turtle[i] == '^' && turtle[i + 1] == '^') {
+            i += 2;
+            while (i < turtle.size()
+                   && !std::isspace(static_cast<unsigned char>(turtle[i]))
+                   && !is_turtle_punctuation(turtle[i])) {
+               ++i;
+            }
+         }
+         continue;
+      }
+
+      const auto start = i;
+      while (i < turtle.size()
+             && !std::isspace(static_cast<unsigned char>(turtle[i]))
+             && !is_turtle_punctuation(turtle[i])) {
+         ++i;
+      }
+      tokens.push_back({ turtle.substr(start, i - start), false });
+   }
+
+   return tokens;
+}
+
+std::string normalize_report_term(const TurtleToken& token) {
+   if (token.literal) {
+      return token.text;
+   }
+   return unwrap_witness_term(token.text);
+}
+
+std::string shacl_local_name(const TurtleToken& token) {
+   const auto term = normalize_report_term(token);
+   const std::string shPrefix = "sh:";
+   const std::string shIriPrefix = "http://www.w3.org/ns/shacl#";
+   if (term.rfind(shPrefix, 0) == 0) {
+      return term.substr(shPrefix.size());
+   }
+   if (term.rfind(shIriPrefix, 0) == 0) {
+      return term.substr(shIriPrefix.size());
+   }
+   return term;
+}
+
+void add_validation_report_triple(
+   std::map<std::string, S223ValidationResultRecord>& byNode,
+   std::vector<std::string>& order,
+   const TurtleToken& subject,
+   const TurtleToken& predicate,
+   const TurtleToken& object
+) {
+   const auto subjectText = normalize_report_term(subject);
+   if (subjectText.empty()) {
+      return;
+   }
+
+   auto& record = byNode[subjectText];
+   if (record.resultNode.empty()) {
+      record.resultNode = subjectText;
+      order.push_back(subjectText);
+   }
+
+   const auto pred = predicate.text;
+   if (pred == "a" && object.text == "sh:ValidationResult") {
+      return;
+   }
+   if (pred == "sh:resultSeverity") {
+      record.severity = shacl_local_name(object);
+   } else if (pred == "sh:sourceConstraintComponent") {
+      record.sourceConstraintComponent = shacl_local_name(object);
+   } else if (pred == "sh:sourceShape") {
+      record.sourceShape = normalize_report_term(object);
+   } else if (pred == "sh:focusNode") {
+      record.focusNode = normalize_report_term(object);
+   } else if (pred == "sh:resultPath") {
+      record.hasResultPath = true;
+      record.resultPath = normalize_report_term(object);
+   } else if (pred == "sh:value") {
+      record.hasValue = true;
+      record.value = normalize_report_term(object);
+   } else if (pred == "sh:resultMessage") {
+      record.messages.push_back(normalize_report_term(object));
+   }
+}
+
+std::vector<S223ValidationResultRecord> parse_validation_report_turtle(
+   const std::string& reportTurtle
+) {
+   const auto tokens = tokenize_validation_report_turtle(reportTurtle);
+   std::map<std::string, S223ValidationResultRecord> byNode;
+   std::set<std::string> validationResultNodes;
+   std::vector<std::string> order;
+
+   std::size_t i = 0;
+   while (i < tokens.size()) {
+      if (tokens[i].text == "@prefix" || tokens[i].text == "PREFIX") {
+         while (i < tokens.size() && tokens[i].text != ".") {
+            ++i;
+         }
+         if (i < tokens.size()) {
+            ++i;
+         }
+         continue;
+      }
+      if (tokens[i].text == "." || tokens[i].text == ";" || tokens[i].text == ",") {
+         ++i;
+         continue;
+      }
+
+      const TurtleToken subject = tokens[i++];
+      while (i < tokens.size() && tokens[i].text != ".") {
+         if (tokens[i].text == ";") {
+            ++i;
+            continue;
+         }
+         const TurtleToken predicate = tokens[i++];
+         while (i < tokens.size()) {
+            const TurtleToken object = tokens[i++];
+            if (predicate.text == "a" && object.text == "sh:ValidationResult") {
+               validationResultNodes.insert(normalize_report_term(subject));
+            }
+            add_validation_report_triple(byNode, order, subject, predicate, object);
+
+            if (i < tokens.size() && tokens[i].text == ",") {
+               ++i;
+               continue;
+            }
+            break;
+         }
+      }
+      if (i < tokens.size() && tokens[i].text == ".") {
+         ++i;
+      }
+   }
+
+   std::vector<S223ValidationResultRecord> results;
+   for (const auto& resultNode : order) {
+      if (validationResultNodes.find(resultNode) != validationResultNodes.end()) {
+         results.push_back(byNode[resultNode]);
+      }
+   }
+   return results;
+}
+
+#ifdef EA_HAVE_SHIFTY
+S223AlgebraValidationSummary algebra_summary_from_result(
+   const shifty::AlgebraResult& algebra
+) {
+   S223AlgebraValidationSummary summary;
+   summary.engineAvailable = true;
+   summary.validationRun = true;
+   summary.conforms = algebra.conforms();
+   summary.resultsText = algebra.results_text();
+
+   for (const auto& violation : algebra.violations()) {
+      S223AlgebraViolationRecord record;
+      record.focusNode = violation.focus_node;
+      record.shapeName = violation.shape_name;
+      record.severity = violation.severity;
+
+      for (const auto& reason : violation.reasons) {
+         record.reasons.push_back({
+            reason.value,
+            reason.path,
+            reason.message,
+            reason.author_message,
+            reason.severity
+         });
+      }
+
+      summary.violations.push_back(std::move(record));
+   }
+
+   return summary;
+}
+#endif
+
 S223StartupQueryResult run_shacl_inference_validation_and_startup_query(
    const S223ModelLoadConfig& config
 ) {
 #ifdef EA_HAVE_SHIFTY
-   require_readable_file(config.ontologyTurtlePath);
+   const auto shapePaths = default_s223_shape_paths(config.ontologyTurtlePath);
+   const auto shapes = read_turtle_files(shapePaths);
    require_readable_file(config.siteTurtlePath);
 
-   auto validator = shifty::PreparedValidator::from_file(
-      config.ontologyTurtlePath,
-      shifty::RdfFormat::Turtle
-   );
+   shifty::PreparedValidator validator(shapes, shifty::RdfFormat::Turtle);
 
    // Quad count only, kept separate from the shapes prepared above: shifty's
    // PreparedValidator has no triple-count accessor of its own, so this loads
-   // the ontology a second time through shifty's parser rather than a second
+   // the shape files a second time through shifty's parser rather than a second
    // library (rdf4cpp's own Turtle parser previously crashed on real ASHRAE
    // 223 ontology content, so it is no longer used here at all).
    shifty::Dataset ontologyDataset;
-   ontologyDataset.load_file(config.ontologyTurtlePath, shifty::RdfFormat::Turtle);
+   for (const auto& shapePath : shapePaths) {
+      ontologyDataset.load_file(shapePath, shifty::RdfFormat::Turtle);
+   }
 
    shifty::Dataset dataset;
    dataset.load_file(config.siteTurtlePath, shifty::RdfFormat::Turtle);
@@ -187,6 +511,11 @@ S223StartupQueryResult run_shacl_inference_validation_and_startup_query(
    // holds site triples plus everything inference added, and ntriples() after
    // this call differs from rawSiteNTriples above whenever inference fired.
    const auto validation = validator.validate(dataset, options);
+   const auto reportTurtle = validation.report_turtle();
+
+   auto algebraOptions = options;
+   algebraOptions.run_inference = false;
+   const auto algebra = validator.validate_algebra(dataset, algebraOptions);
    const std::string inferredSiteNTriples = dataset.ntriples();
 
    const auto startupGraph = dataset.query(
@@ -198,7 +527,7 @@ S223StartupQueryResult run_shacl_inference_validation_and_startup_query(
 
    return {
       {
-         { config.ontologyTurtlePath, ontologyDataset.size() },
+         { join_paths_for_display(shapePaths), ontologyDataset.size() },
          { config.siteTurtlePath, dataset.size() },
          {
             true,
@@ -207,7 +536,9 @@ S223StartupQueryResult run_shacl_inference_validation_and_startup_query(
             validation.conforms(),
             validator.diagnostics_json(),
             validation.results_text(),
-            validation.report_turtle()
+            reportTurtle,
+            parse_validation_report_turtle(reportTurtle),
+            algebra_summary_from_result(algebra)
          }
       },
       startupGraph.data(),
@@ -219,7 +550,7 @@ S223StartupQueryResult run_shacl_inference_validation_and_startup_query(
    (void)config;
    return {
       {
-         { config.ontologyTurtlePath, 0 },
+         { join_paths_for_display(default_s223_shape_paths(config.ontologyTurtlePath)), 0 },
          { config.siteTurtlePath, 0 },
          {
             false,
@@ -228,7 +559,15 @@ S223StartupQueryResult run_shacl_inference_validation_and_startup_query(
             false,
             "",
             "",
-            ""
+            "",
+            {},
+            {
+               false,
+               false,
+               false,
+               "",
+               {}
+            }
          }
       },
       "",
@@ -427,6 +766,140 @@ S223ToolDiagnosticReport build_diagnostic_report(
       }
 
       candidate.creatable = creatable;
+      report.candidates.push_back(std::move(candidate));
+   }
+
+   std::sort(
+      report.candidates.begin(),
+      report.candidates.end(),
+      [](const S223ToolDiagnosticCandidate& a, const S223ToolDiagnosticCandidate& b) {
+         if (a.profileId != b.profileId) {
+            return a.profileId < b.profileId;
+         }
+         return a.rdfResource < b.rdfResource;
+      }
+   );
+
+   return report;
+}
+
+std::string tool_profile_id_for_shape(
+   const CModuleRegistry& modules,
+   const std::string& profileShapeId
+) {
+   const auto* module = modules.Find(profileShapeId);
+   return module == nullptr ? profileShapeId : module->Manifest().toolProfileId;
+}
+
+std::string tool_profile_display_name(const std::string& toolProfileId) {
+   const auto profile = FindBuiltInToolProfile(toolProfileId);
+   return profile.has_value() ? profile->displayName : toolProfileId;
+}
+
+std::map<std::string, S223WitnessDiagnosticMatch> witness_matches_by_focus(
+   const std::vector<RoleWitness>& witnesses
+) {
+   std::map<std::string, S223WitnessDiagnosticMatch> matches;
+
+   for (const auto& witness : witnesses) {
+      const auto focus = unwrap_witness_term(witness.focusNode);
+      auto& match = matches[focus];
+      match.focusNode = focus;
+      match.shapeId = unwrap_witness_term(witness.shapeId);
+
+      auto& roleValues = match.byRole[witness.roleName];
+      for (const auto& value : witness.valueNodes) {
+         roleValues.push_back(unwrap_witness_term(value));
+      }
+   }
+
+   return matches;
+}
+
+S223ToolDiagnosticReport build_witness_diagnostic_report(
+   const std::vector<RoleWitness>& witnesses,
+   const ResolvedToolModel& model,
+   const CModuleRegistry& modules
+) {
+   const auto matches = witness_matches_by_focus(witnesses);
+
+   std::map<std::string, const ResolvedTool*> creatableByFocus;
+   for (const auto& tool : model.tools) {
+      creatableByFocus[tool.focusNode] = &tool;
+   }
+
+   std::map<std::string, std::vector<std::string> > diagnosticsByFocus;
+   for (const auto& diagnostic : model.diagnostics) {
+      diagnosticsByFocus[diagnostic.focusNode].push_back(diagnostic.message);
+   }
+
+   S223ToolDiagnosticReport report;
+
+   for (const auto& [focus, match] : matches) {
+      const auto* module = modules.Find(match.shapeId);
+      if (module == nullptr) {
+         continue;
+      }
+
+      const auto& manifest = module->Manifest();
+      S223ToolDiagnosticCandidate candidate;
+      candidate.rdfResource = focus;
+      candidate.profileId = manifest.toolProfileId;
+      candidate.profileDisplayName = tool_profile_display_name(manifest.toolProfileId);
+
+      const auto nameIt = match.byRole.find("name");
+      candidate.hasName = (nameIt != match.byRole.end()) && !nameIt->second.empty();
+      if (candidate.hasName) {
+         candidate.name = nameIt->second.front();
+      }
+
+      const auto creatableIt = creatableByFocus.find(focus);
+      candidate.creatable = creatableIt != creatableByFocus.end();
+
+      const auto diagIt = diagnosticsByFocus.find(focus);
+      if (diagIt != diagnosticsByFocus.end()) {
+         candidate.blockingReasons.insert(
+            candidate.blockingReasons.end(),
+            diagIt->second.begin(),
+            diagIt->second.end()
+         );
+      }
+
+      for (const auto& antecedent : manifest.antecedents) {
+         S223ToolDiagnosticAntecedent diag;
+         diag.role = antecedent.id.name;
+         diag.requiredToolProfileId =
+            tool_profile_id_for_shape(modules, antecedent.requiredProfileShapeId);
+         diag.required = antecedent.required;
+         diag.boundResourceIsCreatable = false;
+
+         const auto roleIt = match.byRole.find(antecedent.id.name);
+         diag.bound = roleIt != match.byRole.end() && !roleIt->second.empty();
+         if (diag.bound) {
+            diag.rdfResource = roleIt->second.front();
+            for (const auto& boundResource : roleIt->second) {
+               const auto boundTool = creatableByFocus.find(boundResource);
+               if (boundTool != creatableByFocus.end()
+                   && boundTool->second->shapeId == antecedent.requiredProfileShapeId) {
+                  diag.rdfResource = boundResource;
+                  diag.boundResourceIsCreatable = true;
+                  break;
+               }
+            }
+         }
+
+         candidate.antecedents.push_back(std::move(diag));
+      }
+
+      for (const auto& point : manifest.points) {
+         S223ToolDiagnosticPoint diag;
+         diag.pointName = EPointNameToString(point.pointName);
+         diag.required = point.required;
+         const auto roleIt = match.byRole.find(point.id.name);
+         diag.bound = roleIt != match.byRole.end() && !roleIt->second.empty();
+         candidate.points.push_back(std::move(diag));
+      }
+
       report.candidates.push_back(std::move(candidate));
    }
 
@@ -659,9 +1132,9 @@ std::vector<S223ToolStartupSpec> tool_specs_from_startup_graph(
 // Profile/witness-driven discovery: the replacement for the generated-CONSTRUCT
 // path above.  Loads the zea application-profile shapes, runs the shifty witness
 // pass over the inferred site graph, reconciles/orders via the analysis-module
-// assembler, and projects onto the same S223ToolStartupSpec surface the existing
-// CTool_* constructors consume.
-std::vector<S223ToolStartupSpec> tool_specs_via_profile_witnesses(
+// assembler, and projects onto the same S223ToolStartupSpec and diagnostic-report
+// surfaces the rest of the application already consumes.
+S223WitnessDiscoveryResult discover_tools_via_profile_witnesses(
       const std::vector<std::string>& shapeFiles, const std::string& siteFile) {
 #ifdef EA_HAVE_SHIFTY
    std::string shapes;
@@ -689,7 +1162,7 @@ std::vector<S223ToolStartupSpec> tool_specs_via_profile_witnesses(
          { witness.focus_node, witness.shape_id, witness.key, witness.value_nodes });
    }
 
-   const auto model = AssembleTools(witnesses, BuiltInAnalysisModules());
+   auto model = AssembleTools(witnesses, BuiltInAnalysisModules());
    std::cout << "S223 profile/witness discovery: " << witnesses.size()
              << " witness row(s) -> " << model.tools.size() << " tool(s), "
              << model.diagnostics.size() << " diagnostic(s)" << std::endl;
@@ -698,7 +1171,18 @@ std::vector<S223ToolStartupSpec> tool_specs_via_profile_witnesses(
                 << diagnostic.message << std::endl;
    }
 
-   return StartupSpecsFromModel(model);
+   auto tools = StartupSpecsFromModel(model);
+   auto diagnosticReport = build_witness_diagnostic_report(
+      witnesses,
+      model,
+      BuiltInAnalysisModules()
+   );
+
+   return {
+      std::move(model),
+      std::move(tools),
+      std::move(diagnosticReport)
+   };
 #else
    (void)shapeFiles;
    (void)siteFile;
@@ -763,14 +1247,27 @@ S223ApplicationStartupModel LoadS223ApplicationStartupModel(const S223ModelLoadC
    // Tool discovery: profile/witness-driven when zea profile shapes are
    // configured, otherwise the legacy generated-CONSTRUCT discovery.  Both feed
    // the same S223ToolStartupSpec surface and the same CTool_* constructors.
-   auto tools = config.profileShapeTurtlePaths.empty()
-      ? tool_specs_from_startup_graph(shaclResult.startupGraphNTriples)
-      : tool_specs_via_profile_witnesses(config.profileShapeTurtlePaths, config.siteTurtlePath);
+   std::vector<S223ToolStartupSpec> tools;
+   S223ToolDiagnosticReport diagnosticReport;
+   if (config.profileShapeTurtlePaths.empty()) {
+      tools = tool_specs_from_startup_graph(shaclResult.startupGraphNTriples);
+      diagnosticReport = build_diagnostic_report(
+         shaclResult.startupGraphNTriples,
+         shaclResult.diagnosticGraphNTriples
+      );
+   } else {
+      auto witnessDiscovery = discover_tools_via_profile_witnesses(
+         config.profileShapeTurtlePaths,
+         config.siteTurtlePath
+      );
+      tools = std::move(witnessDiscovery.tools);
+      diagnosticReport = std::move(witnessDiscovery.diagnosticReport);
+   }
 
    return {
       shaclResult.loadSummary,
       std::move(tools),
-      build_diagnostic_report(shaclResult.startupGraphNTriples, shaclResult.diagnosticGraphNTriples),
+      std::move(diagnosticReport),
       shaclResult.siteGraphRawNTriples,
       shaclResult.siteGraphInferredNTriples
    };

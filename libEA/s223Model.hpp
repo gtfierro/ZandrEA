@@ -17,6 +17,42 @@ struct S223FileLoadSummary {
    std::size_t quadCount;
 };
 
+struct S223ValidationResultRecord {
+   std::string resultNode;
+   std::string severity;
+   std::string sourceConstraintComponent;
+   std::string sourceShape;
+   std::string focusNode;
+   bool hasResultPath = false;
+   std::string resultPath;
+   bool hasValue = false;
+   std::string value;
+   std::vector<std::string> messages;
+};
+
+struct S223AlgebraReasonRecord {
+   std::string value;
+   std::string path;
+   std::string message;
+   std::string authorMessage;
+   std::string severity;
+};
+
+struct S223AlgebraViolationRecord {
+   std::string focusNode;
+   std::string shapeName;
+   std::string severity;
+   std::vector<S223AlgebraReasonRecord> reasons;
+};
+
+struct S223AlgebraValidationSummary {
+   bool engineAvailable;
+   bool validationRun;
+   bool conforms;
+   std::string resultsText;
+   std::vector<S223AlgebraViolationRecord> violations;
+};
+
 struct S223ShaclSummary {
    bool engineAvailable;
    bool inferenceRun;
@@ -25,6 +61,8 @@ struct S223ShaclSummary {
    std::string diagnosticsJson;
    std::string resultsText;
    std::string reportTurtle;
+   std::vector<S223ValidationResultRecord> results;
+   S223AlgebraValidationSummary algebra;
 };
 
 struct S223ModelLoadConfig {

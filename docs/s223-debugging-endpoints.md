@@ -46,15 +46,78 @@ inferred dataset:
 {
   "active": true,
   "conforms": false,
-  "resultsText": "Validation Report\nConforms: False\n...",
+  "resultCount": 2,
+  "results": [
+    {
+      "resultNode": "_:a1",
+      "severity": "Violation",
+      "sourceConstraintComponent": "MinCountConstraintComponent",
+      "sourceShape": "_:shape",
+      "focusNode": "http://example.org/site#ahu1_occ",
+      "hasResultPath": true,
+      "resultPath": "http://data.ashrae.org/standard223#hasEnumerationKind",
+      "hasValue": false,
+      "value": "",
+      "messages": [
+        "s223: An `EnumerableProperty` shall be associated with exactly one `EnumerationKind` using the relation `hasEnumerationKind`."
+      ]
+    }
+  ],
   "diagnosticsJson": "[]",
   "reportTurtle": "..."
 }
 ```
 
-`resultsText`/`reportTurtle` can be large; the response is gzip'd
+`results` is the default client-facing view of the SHACL report: one object per
+`sh:ValidationResult`, with stable fields for filtering by severity,
+constraint component, focus node, path, value, and message. This avoids parsing
+the human text report in clients while preserving the raw `reportTurtle` for
+RDF-level debugging.
+
+`results`/`reportTurtle` can be large; the response is gzip'd
 (`Content-Encoding: gzip`), so fetch with a client that decompresses
 automatically (e.g. `curl --compressed`).
+
+## `GET /s223/vaildation_algebra`
+
+Algebra-path SHACL validation results from shifty
+`PreparedValidator::validate_algebra()`. This endpoint is useful when clients
+want the engine's grouped violation/reason tree directly instead of the W3C
+`sh:ValidationReport` graph exposed by `/s223/validation`.
+
+`/s223/validation_algebra` is accepted as a correctly spelled alias.
+
+```json
+{
+  "active": true,
+  "engineAvailable": true,
+  "validationRun": true,
+  "conforms": false,
+  "violationCount": 1,
+  "resultsText": "Validation Report\nConforms: False\n...",
+  "violations": [
+    {
+      "focusNode": "<http://example.org/site#ahu1_occ>",
+      "shapeName": "http://example.org/shapes#OccupancyShape",
+      "severity": "Violation",
+      "reasons": [
+        {
+          "value": "<http://example.org/site#ahu1_occ>",
+          "path": "s223:hasEnumerationKind",
+          "message": "MinCount 1 failed",
+          "authorMessage": "s223: An `EnumerableProperty` shall be associated with exactly one `EnumerationKind` using the relation `hasEnumerationKind`.",
+          "severity": "Violation"
+        }
+      ]
+    }
+  ]
+}
+```
+
+Each violation groups the failing reasons for one focus node and one shape.
+`shapeName` is empty for anonymous shapes. Each reason carries the failed value,
+the algebra path when available, the engine message, the author-supplied SHACL
+message when available, and the reason severity.
 
 ## `GET /s223/graph?inferred=true|false`
 

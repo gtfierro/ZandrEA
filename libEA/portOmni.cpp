@@ -258,6 +258,16 @@ std::string CPortOmni::SayS223ValidationDiagnosticsJson( void ) const {
    return ViewRef.SayS223ValidationDiagnosticsJson();
 }
 
+std::vector<S223ValidationResultRecord> CPortOmni::SayS223ValidationResults( void ) const {
+
+   return ViewRef.SayS223ValidationResults();
+}
+
+S223AlgebraValidationSummary CPortOmni::SayS223AlgebraValidationSummary( void ) const {
+
+   return ViewRef.SayS223AlgebraValidationSummary();
+}
+
 
 std::string CPortOmni::SayS223SiteGraphNTriples( bool inferred ) const {
 

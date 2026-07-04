@@ -65,8 +65,9 @@ export COMPOSE_HTTP_TIMEOUT = 1000
 # ASHRAE 223 startup model inputs for the "rest" container. Paths are
 # container-side (the "ead" process reads them inside the container, not on
 # the host), and are passed through by the environment: entries in
-# docker-compose.yml / docker-compose.podman.yml. 223p.ttl is bind-mounted
-# directly since (unlike EAd/) it isn't already synced into the container.
+# docker-compose.yml / docker-compose.podman.yml. 223p.ttl and its default
+# QUDT companion qudt-all.ttl are bind-mounted directly since (unlike EAd/)
+# they aren't already synced into the container.
 export EA_S223_ONTOLOGY_TTL ?= /ea/223p.ttl
 export EA_S223_SITE_TTL ?= /ea/EAd/tests/testdata/NIST-IBAL.ttl
 

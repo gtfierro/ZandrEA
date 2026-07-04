@@ -43,6 +43,7 @@ services:
       - ./libEA:/ea/libEA:ro
       - ./EAd:/ea/EAd:ro
       - ./223p.ttl:/ea/223p.ttl:ro
+      - ./qudt-all.ttl:/ea/qudt-all.ttl:ro
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.rest.entrypoints=front"

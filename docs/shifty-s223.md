@@ -10,10 +10,11 @@ export EA_S223_ONTOLOGY_TTL=/path/to/223p.ttl
 export EA_S223_SITE_TTL=/path/to/site-model.ttl
 ```
 
-When the binary is built with shifty, `EA_S223_ONTOLOGY_TTL` is loaded as the
-SHACL shapes/rules graph and `EA_S223_SITE_TTL` is loaded as the data graph.
-Validation runs with `run_inference = true`, so shifty applies SHACL-AF rules
-before evaluating constraints.
+When the binary is built with shifty, `EA_S223_ONTOLOGY_TTL` is loaded with
+`qudt-all.ttl` from the same directory as the SHACL shapes/rules graphs, and
+`EA_S223_SITE_TTL` is loaded as the data graph. Validation runs with
+`run_inference = true`, so shifty applies SHACL-AF rules before evaluating
+constraints.
 
 ## Build with shifty
 

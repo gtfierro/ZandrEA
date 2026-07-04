@@ -274,6 +274,9 @@ export EA_S223_SITE_TTL=/path/to/site.ttl
 export EA_S223_PROFILE_SHAPES_TTL=/path/to/zea-core.ttl:/path/to/zea-profiles.ttl   # ':'-separated
 ```
 
+Place `qudt-all.ttl` beside `223p.ttl`; the loader prepares both as the default
+S223/QUDT shapes set.
+
 When `EA_S223_PROFILE_SHAPES_TTL` is set, `LoadS223ApplicationStartupModel`
 discovers tools via `tool_specs_via_profile_witnesses` (witnesses → assembler →
 `StartupSpecsFromModel`) instead of the legacy generated-CONSTRUCT discovery; the

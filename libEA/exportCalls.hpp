@@ -91,6 +91,8 @@ class IExportOmni {
       virtual std::string              SayS223ValidationReportTurtle( void ) const = 0;
       virtual std::string              SayS223ValidationResultsText( void ) const = 0;
       virtual std::string              SayS223ValidationDiagnosticsJson( void ) const = 0;
+      virtual std::vector<S223ValidationResultRecord> SayS223ValidationResults( void ) const = 0;
+      virtual S223AlgebraValidationSummary SayS223AlgebraValidationSummary( void ) const = 0;
       virtual std::string              SayS223SiteGraphNTriples( bool inferred ) const = 0;
       virtual S223ToolDiagnosticReport SayS223ToolConfigurationReport( void ) const = 0;
 };

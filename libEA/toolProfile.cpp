@@ -258,12 +258,8 @@ PointRequirement binary_point(EPointName pointName) {
    };
 }
 
-// Function-local statics, not namespace-scope globals: BuiltInToolProfiles()
-// can run as early as LibMain()'s __attribute__((constructor)), which does
-// not guarantee this translation unit's globals have finished dynamic
-// initialization yet. A lazily-initialized local static is guaranteed
-// complete on first use regardless of cross-TU init order; a plain global
-// here was previously observed to still be empty at that point.
+// Function-local statics keep profile construction independent of cross-TU
+// global initialization order.
 const std::vector<PointRequirement>& AhuPoints(void) {
    static const std::vector<PointRequirement> points = {
       analog_point(EPointName::Pressure_static_air_supply, { "quantitykind:GaugePressure" }),

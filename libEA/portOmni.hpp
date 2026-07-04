@@ -102,6 +102,8 @@ class CPortOmni : public IExportOmni {
       virtual std::string              SayS223ValidationReportTurtle( void ) const override;
       virtual std::string              SayS223ValidationResultsText( void ) const override;
       virtual std::string              SayS223ValidationDiagnosticsJson( void ) const override;
+      virtual std::vector<S223ValidationResultRecord> SayS223ValidationResults( void ) const override;
+      virtual S223AlgebraValidationSummary SayS223AlgebraValidationSummary( void ) const override;
       virtual std::string              SayS223SiteGraphNTriples( bool inferred ) const override;
       virtual S223ToolDiagnosticReport SayS223ToolConfigurationReport( void ) const override;
 

@@ -479,6 +479,58 @@ inline static const json::value json_string(const std::string & s) {
    return(json::value::string(U(s)));
 }
 
+static const json::value json_s223_validation_result(
+   const S223ValidationResultRecord& result
+) {
+   json::value obj;
+   obj[U("resultNode")] = json_string(result.resultNode);
+   obj[U("severity")] = json_string(result.severity);
+   obj[U("sourceConstraintComponent")] = json_string(result.sourceConstraintComponent);
+   obj[U("sourceShape")] = json_string(result.sourceShape);
+   obj[U("focusNode")] = json_string(result.focusNode);
+   obj[U("hasResultPath")] = json_bool(result.hasResultPath);
+   obj[U("resultPath")] = json_string(result.resultPath);
+   obj[U("hasValue")] = json_bool(result.hasValue);
+   obj[U("value")] = json_string(result.value);
+
+   obj[U("messages")] = json::value::array();
+   int i = 0;
+   for (const auto& message : result.messages) {
+      obj[U("messages")][i++] = json_string(message);
+   }
+
+   return obj;
+}
+
+static const json::value json_s223_algebra_reason(
+   const S223AlgebraReasonRecord& reason
+) {
+   json::value obj;
+   obj[U("value")] = json_string(reason.value);
+   obj[U("path")] = json_string(reason.path);
+   obj[U("message")] = json_string(reason.message);
+   obj[U("authorMessage")] = json_string(reason.authorMessage);
+   obj[U("severity")] = json_string(reason.severity);
+   return obj;
+}
+
+static const json::value json_s223_algebra_violation(
+   const S223AlgebraViolationRecord& violation
+) {
+   json::value obj;
+   obj[U("focusNode")] = json_string(violation.focusNode);
+   obj[U("shapeName")] = json_string(violation.shapeName);
+   obj[U("severity")] = json_string(violation.severity);
+   obj[U("reasons")] = json::value::array();
+
+   int i = 0;
+   for (const auto& reason : violation.reasons) {
+      obj[U("reasons")][i++] = json_s223_algebra_reason(reason);
+   }
+
+   return obj;
+}
+
 // Return a json string with a getterReply value
 static const json::value json_reply(const EGuiReply r) {
    switch(r) {
@@ -1680,9 +1732,32 @@ void handler::handle_get(http_request message)
          auto status = p_Port->SayS223Status();
          reply[U("active")] = json_bool(status.active);
          reply[U("conforms")] = json_bool(status.conforms);
-         reply[U("resultsText")] = json_string(p_Port->SayS223ValidationResultsText());
+         auto results = p_Port->SayS223ValidationResults();
+         reply[U("resultCount")] = json_num(results.size());
+         reply[U("results")] = json::value::array();
+         int i = 0;
+         for (const auto & result : results) {
+            reply[U("results")][i++] = json_s223_validation_result(result);
+         }
          reply[U("diagnosticsJson")] = json_string(p_Port->SayS223ValidationDiagnosticsJson());
          reply[U("reportTurtle")] = json_string(p_Port->SayS223ValidationReportTurtle());
+         compress = true;
+
+      } else if (path == U("/s223/vaildation_algebra") || path == U("/s223/validation_algebra")) {
+         auto funcname = U("SayS223AlgebraValidationSummary");
+         auto algebra = p_Port->SayS223AlgebraValidationSummary();
+         reply[U("active")] = json_bool(p_Port->SayS223Status().active);
+         reply[U("engineAvailable")] = json_bool(algebra.engineAvailable);
+         reply[U("validationRun")] = json_bool(algebra.validationRun);
+         reply[U("conforms")] = json_bool(algebra.conforms);
+         reply[U("violationCount")] = json_num(algebra.violations.size());
+         reply[U("resultsText")] = json_string(algebra.resultsText);
+         reply[U("violations")] = json::value::array();
+
+         int i = 0;
+         for (const auto & violation : algebra.violations) {
+            reply[U("violations")][i++] = json_s223_algebra_violation(violation);
+         }
          compress = true;
 
       } else if (path == U("/s223/tools")) {
