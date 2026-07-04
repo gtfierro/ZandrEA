@@ -1,0 +1,45 @@
+{
+  "schema": "zandrea.s223-example.v1",
+  "name": "NIST IBAL AHU/VAV example",
+  "ontology": {
+    "local_path": "223p.ttl"
+  },
+  "site_model": {
+    "source_url": "https://models.open223.info/NIST-IBAL.ttl",
+    "local_path": "EAd/tests/testdata/NIST-IBAL.ttl",
+    "base_iri": "http://example.org/IBAL"
+  },
+  "column_map": "EAd/tests/testdata/ibal-ahu-vav-column-map.json",
+  "csv_data": [
+    "EAd/tests/testdata/ibal_demo_250709_si.csv",
+    "EAd/tests/testdata/ibal_ahu2Fault_250709_si.csv",
+    "EAd/tests/testdata/ibal_ahu2Fault_250721_si.csv"
+  ],
+  "discovery": {
+    "profiles": [
+      "ahu_ibal",
+      "vav_ibal"
+    ],
+    "candidate_selection": {
+      "source": "tool_profile_focus_classes",
+      "description": "Discover equipment by the S223 classes declared by each tool profile, not by hardcoded resource names or enum slots."
+    },
+    "subject_naming": {
+      "source": "zea:name",
+      "required": true,
+      "examples": {
+        "http://example.org/IBAL#AHU_1": "AHU-1",
+        "http://example.org/IBAL#VAV_1": "VAV-1"
+      }
+    },
+    "data_filter": {
+      "source": "column_map_subjects",
+      "missing_data_policy": "skip_candidate",
+      "description": "A discovered RDF candidate is included in this data-backed example only if its zea:name value exists in the column map."
+    },
+    "antecedent_binding": {
+      "source": "tool_profile_antecedent_paths",
+      "description": "Bind antecedents by the property paths declared by the profile, such as the VAV air_source requirement."
+    }
+  }
+}

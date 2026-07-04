@@ -1662,6 +1662,94 @@ void handler::handle_get(http_request message)
          }
          compress = true;
 
+      } else if (path == U("/s223/status")) {
+         auto funcname = U("SayS223Status");
+         auto status = p_Port->SayS223Status();
+         reply[U("active")] = json_bool(status.active);
+         reply[U("conforms")] = json_bool(status.conforms);
+         reply[U("ontologyPath")] = json_string(status.ontologyPath);
+         reply[U("ontologyQuadCount")] = json_num(status.ontologyQuadCount);
+         reply[U("sitePath")] = json_string(status.sitePath);
+         reply[U("siteQuadCount")] = json_num(status.siteQuadCount);
+         reply[U("candidateEquipmentCount")] = json_num(status.candidateEquipmentCount);
+         reply[U("creatableToolCount")] = json_num(status.creatableToolCount);
+         reply[U("instantiatedToolCount")] = json_num(status.instantiatedToolCount);
+
+      } else if (path == U("/s223/validation")) {
+         auto funcname = U("SayS223Validation");
+         auto status = p_Port->SayS223Status();
+         reply[U("active")] = json_bool(status.active);
+         reply[U("conforms")] = json_bool(status.conforms);
+         reply[U("resultsText")] = json_string(p_Port->SayS223ValidationResultsText());
+         reply[U("diagnosticsJson")] = json_string(p_Port->SayS223ValidationDiagnosticsJson());
+         reply[U("reportTurtle")] = json_string(p_Port->SayS223ValidationReportTurtle());
+         compress = true;
+
+      } else if (path == U("/s223/tools")) {
+         auto funcname = U("SayS223ToolConfigurationReport");
+         auto report = p_Port->SayS223ToolConfigurationReport();
+         reply[U("creatableCount")] = json_num(report.CreatableCount());
+         reply[U("candidates")] = json::value::array();
+         int i = 0;
+         for (const auto & candidate : report.candidates) {
+            json::value c;
+            c[U("rdfResource")] = json_string(candidate.rdfResource);
+            c[U("profileId")] = json_string(candidate.profileId);
+            c[U("profileDisplayName")] = json_string(candidate.profileDisplayName);
+            c[U("hasName")] = json_bool(candidate.hasName);
+            c[U("name")] = json_string(candidate.name);
+            c[U("creatable")] = json_bool(candidate.creatable);
+
+            c[U("blockingReasons")] = json::value::array();
+            int j = 0;
+            for (const auto & reason : candidate.blockingReasons) {
+               c[U("blockingReasons")][j++] = json_string(reason);
+            }
+
+            c[U("antecedents")] = json::value::array();
+            j = 0;
+            for (const auto & a : candidate.antecedents) {
+               json::value av;
+               av[U("role")] = json_string(a.role);
+               av[U("requiredToolProfileId")] = json_string(a.requiredToolProfileId);
+               av[U("required")] = json_bool(a.required);
+               av[U("bound")] = json_bool(a.bound);
+               av[U("rdfResource")] = json_string(a.rdfResource);
+               av[U("boundResourceIsCreatable")] = json_bool(a.boundResourceIsCreatable);
+               c[U("antecedents")][j++] = av;
+            }
+
+            c[U("points")] = json::value::array();
+            j = 0;
+            for (const auto & p : candidate.points) {
+               json::value pv;
+               pv[U("pointName")] = json_string(p.pointName);
+               pv[U("required")] = json_bool(p.required);
+               pv[U("bound")] = json_bool(p.bound);
+               c[U("points")][j++] = pv;
+            }
+
+            reply[U("candidates")][i++] = c;
+         }
+         compress = true;
+
+      } else if (path == U("/s223/graph")) {
+         // Raw N-Triples download of the site data graph, before or after
+         // SHACL-AF inference. Bypasses the shared JSON reply below: this is
+         // a debugging download, not an API data structure.
+         utility::string_t inferredParam;
+         bool inferred = false;
+         if (handler::get_querystring(querystringmap, U("inferred"), inferredParam)) {
+            inferred = (inferredParam == U("true") || inferredParam == U("1"));
+         }
+         auto body = p_Port->SayS223SiteGraphNTriples(inferred);
+         http_response graphResponse(status_codes::OK);
+         graphResponse.headers().add(U("Cache-Control"), U("no-cache"));
+         graphResponse.headers().add(U("Access-Control-Allow-Origin"), U("*"));
+         graphResponse.set_body(body, U("application/n-triples; charset=utf-8"));
+         message.reply(graphResponse);
+         return;
+
       } else if (path == U("/alerts")) {
          auto funcname = U("SayCachedAlerts");
          auto alertlist = json::value::array();

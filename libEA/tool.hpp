@@ -26,6 +26,8 @@ See the License for the specific language governing permissions and limitations 
 #include "chart.hpp"
 #include "rainfall.hpp"
 
+#include <string>
+
 class CAgent;
 class CCaseKit;
 class CChartShewhart;
@@ -53,6 +55,7 @@ class CSubj_chwp_ibal;
 class CSubj_tes_ibal;
 class CSubj_vav_ibal;
 class CView;
+struct S223ToolStartupSpec;
 
 /////////1/////////2/////////3/////////4/////////5/////////6/////////7/////////8/////////9/////////C/////
 // CApplication needs an abstract interface to any Tool object
@@ -240,7 +243,9 @@ class CTool_tes_ibal : public ATool {
                         CSequence&,
                         CController&,
                         CView&,
-                        CPortOmni& );
+                        CPortOmni&,
+                        std::string = "",
+                        std::string = "" );
 
       ~CTool_tes_ibal( void );
 
@@ -365,6 +370,15 @@ class CTool_ahu_ibal : public ATool {
 
       CTool_ahu_ibal(   EUnitSystem,
                         CDomain&,
+                        const S223ToolStartupSpec&,
+                        const CClockPerPort&,
+                        CSequence&,
+                        CController&,
+                        CView&,
+                        CPortOmni& );
+
+      CTool_ahu_ibal(   EUnitSystem,
+                        CDomain&,
                         EDataLabel,             // ahu own label
                         ERealName,              // ahu own name
                         ERealName,              // antecedent chw plant name
@@ -373,7 +387,9 @@ class CTool_ahu_ibal : public ATool {
                         CSequence&,
                         CController&,
                         CView&,
-                        CPortOmni& );
+                        CPortOmni&,
+                        std::string = "",
+                        std::string = "" );
 
       ~CTool_ahu_ibal( void );
 
@@ -584,6 +600,15 @@ class CTool_vav_ibal : public ATool {
 
       CTool_vav_ibal(   EUnitSystem,
                         CDomain&,
+                        const S223ToolStartupSpec&,
+                        const CClockPerPort&,
+                        CSequence&,
+                        CController&,
+                        CView&,
+                        CPortOmni& );
+
+      CTool_vav_ibal(   EUnitSystem,
+                        CDomain&,
                         EDataLabel,
                         ERealName,     // vav own name (real-world)
                         ERealName,     // antecedent ahu name
@@ -592,7 +617,10 @@ class CTool_vav_ibal : public ATool {
                         CSequence&,
                         CController&,
                         CView&,
-                        CPortOmni& );
+                        CPortOmni&,
+                        std::string = "",
+                        std::string = "",
+                        std::string = "" );
 
       ~CTool_vav_ibal( void );
 

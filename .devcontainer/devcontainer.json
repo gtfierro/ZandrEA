@@ -1,0 +1,30 @@
+{
+	"name": "ZandrEA Dev Container",
+	"build": {
+		"dockerfile": "Dockerfile",
+		"context": ".."
+	},
+	"features": {
+		"ghcr.io/devcontainers/features/common-utils:2": {
+			"installZsh": true,
+			"configureZshAsDefaultShell": true,
+			"upgradePackages": false,
+			"username": "zed",
+			"userUid": "1000",
+			"userGid": "1000"
+		}
+	},
+	"remoteUser": "zed",
+	"workspaceFolder": "/workspaces/ZandrEA",
+	"customizations": {
+		"zed": {
+			"extensions": [
+				"c",
+				"cpp",
+				"make",
+				"python",
+				"docker"
+			]
+		}
+	}
+}

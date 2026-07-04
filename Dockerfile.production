@@ -61,7 +61,6 @@ RUN git clone --depth 1 --branch "$SHIFTY_REF" "$SHIFTY_REPO" shifty-src && \
     cmake --install shifty-src/build/cpp
 COPY conanfile.txt ./
 RUN conan profile detect --force && \
-    conan remote add dice-group https://conan.dice-research.org/artifactory/api/conan/tentris && \
     CC=gcc-14 CXX=g++-14 conan install . --output-folder=conan --build=missing \
       -c tools.build:jobs="$(nproc)" \
       -s compiler.cppstd=20 \

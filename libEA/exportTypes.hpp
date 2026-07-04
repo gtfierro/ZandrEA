@@ -18,6 +18,7 @@ See the License for the specific language governing permissions and limitations 
 #ifndef EXPORTTYPES_HPP
 #define EXPORTTYPES_HPP
 
+#include <cstddef>
 #include <string>
 #include <vector>
 #include <utility>
@@ -640,6 +641,35 @@ typedef struct SGuiPackSubjectCases {
    explicit SGuiPackSubjectCases( EGuiReply );
 
 } GuiPackSubjectCases_t;
+
+
+// Summarizes one process startup's ASHRAE 223 RDF loading pass, for REST
+// debugging endpoints. When active is false, ZandrEA started with the legacy
+// fixed tool set and every other field here is meaningless (zero/empty).
+typedef struct SGuiPackS223Status {
+
+   EGuiReply                        getterReply;
+   bool                             active;
+   bool                             conforms;
+   std::string                      ontologyPath;
+   std::size_t                      ontologyQuadCount;
+   std::string                      sitePath;
+   std::size_t                      siteQuadCount;
+   std::size_t                      candidateEquipmentCount;
+   std::size_t                      creatableToolCount;
+   std::size_t                      instantiatedToolCount;
+
+   SGuiPackS223Status(  bool,
+                        bool,
+                        std::string,
+                        std::size_t,
+                        std::string,
+                        std::size_t,
+                        std::size_t,
+                        std::size_t,
+                        std::size_t );
+
+} GuiPackS223Status_t;
 
 #endif
 

@@ -772,6 +772,12 @@ class CFactFromAntecedentSubject : public AFact {
                                     EDataLabel,       // Fact's own label
                                     CDomain&,
                                     ERealName );      // antecedent subj name 
+
+      CFactFromAntecedentSubject(   CSequence&,
+                                    ASubject&,
+                                    EDataLabel,
+                                    CDomain&,
+                                    std::string );    // antecedent dynamic subject key
   
       ~CFactFromAntecedentSubject( void );
 
@@ -779,6 +785,7 @@ class CFactFromAntecedentSubject : public AFact {
 
       const ASubject* const               p_AnteSubj;
       const ERealName                     anteSubjName;
+      const std::string                   anteSubjKey;
 
    // Methods
       virtual void      Cycle( time_t ) override;

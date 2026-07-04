@@ -187,7 +187,7 @@ class CCase : public IGuiShadow {
 
    // Private methods
 
-      static std::string      InitReportPreamble( ERealName, time_t, int, int, const CRule& );
+      static std::string      InitReportPreamble( const std::string&, time_t, int, int, const CRule& );
       static GuiOptionSet_t   GenerateMultipleChoiceOfLength( size_t );
 
       void                 LoadSnapshotKronoWithLogicChainOfCase( CRuleKit& );

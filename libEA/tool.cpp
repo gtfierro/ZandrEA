@@ -36,11 +36,36 @@ See the License for the specific language governing permissions and limitations 
 #include "s223Model.hpp"
 #include "subject.hpp" 
 #include "taskClock.hpp"
+#include "toolProfile.hpp"
 #include "viewParts.hpp"
 #include "mvc_model.hpp"
 
 #include <iostream>
+#include <sstream>
+#include <stdexcept>
 #include <utility>
+
+namespace {
+
+std::string RequiredAntecedentSubjectKeyFromS223Role(
+   const S223ToolStartupSpec& spec,
+   const std::string& role
+) {
+   // Antecedent identity is the target RDF resource, not a display name.  That
+   // keeps VAV->AHU binding stable even if zea:name changes or is duplicated.
+   for (const auto& antecedent : spec.antecedents) {
+      if (antecedent.role == role && !antecedent.rdfResource.empty()) {
+         return antecedent.rdfResource;
+      }
+   }
+
+   std::ostringstream msg;
+   msg << "S223 tool " << spec.name << " (" << spec.rdfResource
+       << ") does not have a " << role << " antecedent RDF resource";
+   throw std::runtime_error(msg.str());
+}
+
+} // namespace
 
 
 /////////1/////////2/////////3/////////4/////////5/////////6/////////7/////////8/////////9/////////C/////
@@ -1265,6 +1290,35 @@ CTool_tes_ibal::~CTool_tes_ibal( void ) { }
 
 CTool_ahu_ibal::CTool_ahu_ibal(  EUnitSystem unitSys,
                                  CDomain& domainRef,
+                                 const S223ToolStartupSpec& s223Spec,
+                                 const CClockPerPort& clockRef,
+                                 CSequence& seq0Ref,
+                                 CController& ctrlrRef,
+                                 CView& viewRef,
+                                 CPortOmni& portRef )
+                                 // S223 construction keeps the RDF resource as
+                                 // the dynamic subject key and zea:name as
+                                 // display text.  ERealName is intentionally
+                                 // Undefined for the AHU instance.
+                                 : CTool_ahu_ibal(
+                                      unitSys,
+                                      domainRef,
+                                      EDataLabel::Subject_ahu_singleDuct_vavReheat,
+                                      ERealName::Undefined,
+                                      ERealName::Subject_chwPlant,
+                                      ERealName::Subject_hwPlant_sim,
+                                      clockRef,
+                                      seq0Ref,
+                                      ctrlrRef,
+                                      viewRef,
+                                      portRef,
+                                      s223Spec.rdfResource,
+                                      s223Spec.name
+                                   ) {
+}
+
+CTool_ahu_ibal::CTool_ahu_ibal(  EUnitSystem unitSys,
+                                 CDomain& domainRef,
                                  EDataLabel ahuLabel,
                                  ERealName ahuName,
                                  ERealName chwPlantName,
@@ -1273,7 +1327,9 @@ CTool_ahu_ibal::CTool_ahu_ibal(  EUnitSystem unitSys,
                                  CSequence& seq0Ref,
                                  CController& ctrlrRef,
                                  CView& viewRef,
-                                 CPortOmni& portRef )
+                                 CPortOmni& portRef,
+                                 std::string dynamicSubjectKey,
+                                 std::string dynamicNameText )
                                  :  ATool(   unitSys,
                                              domainRef,
                                              ahuLabel,
@@ -1288,18 +1344,36 @@ CTool_ahu_ibal::CTool_ahu_ibal(  EUnitSystem unitSys,
 //======================================================================================================/
 // $$$ TBD to move these reassignments to ATool initialization list (i.e., learn smt ptr move-semantics)
 
-u_Subject = std::make_unique<CSubj_ahu_ibal>(
-               unitSys,
-               domainRef,
-               ahuLabel,
-               ahuName,
-               chwPlantName,
-               hwPlantName,
-               660.7f,  // air flow, rated (L/s)
-               34.0f,   // CHW flow, rated (L/minute)
-               9.0f,    // preheat, rated (kw)
-               0.30f    // min fraction OA
-);
+if ( dynamicSubjectKey.empty() ) {
+   // Legacy/default startup path: keep the historical enum-backed subject.
+   u_Subject = std::make_unique<CSubj_ahu_ibal>(
+                  unitSys,
+                  domainRef,
+                  ahuLabel,
+                  ahuName,
+                  chwPlantName,
+                  hwPlantName,
+                  660.7f,  // air flow, rated (L/s)
+                  34.0f,   // CHW flow, rated (L/minute)
+                  9.0f,    // preheat, rated (kw)
+                  0.30f    // min fraction OA
+   );
+} else {
+   // S223 startup path: register this AHU by RDF resource, not by ERealName.
+   u_Subject = std::make_unique<CSubj_ahu_ibal>(
+                  unitSys,
+                  domainRef,
+                  ahuLabel,
+                  std::move( dynamicSubjectKey ),
+                  std::move( dynamicNameText ),
+                  chwPlantName,
+                  hwPlantName,
+                  660.7f,
+                  34.0f,
+                  9.0f,
+                  0.30f
+   );
+}
 
 
 u_RuleKit = std::make_unique<CRuleKit>(
@@ -2610,6 +2684,35 @@ CTool_ahu_ibal::~CTool_ahu_ibal( void ) { /* Emtpy d-tor*/ }
 
 CTool_vav_ibal::CTool_vav_ibal(  EUnitSystem unitSys,
                                  CDomain& domainRef,
+                                 const S223ToolStartupSpec& s223Spec,
+                                 const CClockPerPort& clockRef,
+                                 CSequence& seq0Ref,
+                                 CController& ctrlrRef,
+                                 CView& viewRef,
+                                 CPortOmni& portRef )
+                                 // S223 construction keeps the VAV instance and
+                                 // its upstream AHU binding in RDF-resource
+                                 // identity space.  No VAV enum slot is chosen.
+                                 : CTool_vav_ibal(
+                                      unitSys,
+                                      domainRef,
+                                      EDataLabel::Subject_vav_pressIndep_hwReheat,
+                                      ERealName::Undefined,
+                                      ERealName::Undefined,
+                                      ERealName::Subject_hwPlant_sim,
+                                      clockRef,
+                                      seq0Ref,
+                                      ctrlrRef,
+                                      viewRef,
+                                      portRef,
+                                      s223Spec.rdfResource,
+                                      s223Spec.name,
+                                      RequiredAntecedentSubjectKeyFromS223Role(s223Spec, "air_source")
+                                   ) {
+}
+
+CTool_vav_ibal::CTool_vav_ibal(  EUnitSystem unitSys,
+                                 CDomain& domainRef,
                                  EDataLabel vavLabel,
                                  ERealName vavName,
                                  ERealName ahuName,
@@ -2618,7 +2721,10 @@ CTool_vav_ibal::CTool_vav_ibal(  EUnitSystem unitSys,
                                  CSequence& seq0Ref,
                                  CController& ctrlrRef,
                                  CView& viewRef,
-                                 CPortOmni& portRef )
+                                 CPortOmni& portRef,
+                                 std::string dynamicSubjectKey,
+                                 std::string dynamicNameText,
+                                 std::string dynamicAhuSubjectKey )
                                  :  ATool(   unitSys,
                                              domainRef,
                                              vavLabel,
@@ -2633,19 +2739,39 @@ CTool_vav_ibal::CTool_vav_ibal(  EUnitSystem unitSys,
 //======================================================================================================/
 // $$$ TBD to move these reassignments to ATool initialization list (i.e., learn smt ptr move-semantics)
 
-u_Subject = std::make_unique<CSubj_vav_ibal>(
-               unitSys,
-               domainRef,
-               vavLabel,
-               vavName,
-               ahuName,
-               hwPlantName,
-               0.305f,        // duct diam (m)
-               5.555f,        // duct area (m^2)
-               330.4f,        // air flow, rated (L/sec)
-               0.0f,          // HW flow, rated (L/minute)
-               2.0f           // reheat, rated (kW)
-);
+if ( dynamicSubjectKey.empty() ) {
+   // Legacy/default startup path: resolve the antecedent AHU by ERealName.
+   u_Subject = std::make_unique<CSubj_vav_ibal>(
+                  unitSys,
+                  domainRef,
+                  vavLabel,
+                  vavName,
+                  ahuName,
+                  hwPlantName,
+                  0.305f,        // duct diam (m)
+                  5.555f,        // duct area (m^2)
+                  330.4f,        // air flow, rated (L/sec)
+                  0.0f,          // HW flow, rated (L/minute)
+                  2.0f           // reheat, rated (kW)
+   );
+} else {
+   // S223 startup path: register the VAV by RDF resource and store its AHU
+   // antecedent as another RDF resource key.
+   u_Subject = std::make_unique<CSubj_vav_ibal>(
+                  unitSys,
+                  domainRef,
+                  vavLabel,
+                  std::move( dynamicSubjectKey ),
+                  std::move( dynamicNameText ),
+                  dynamicAhuSubjectKey,
+                  hwPlantName,
+                  0.305f,
+                  5.555f,
+                  330.4f,
+                  0.0f,
+                  2.0f
+   );
+}
 
 u_RuleKit = std::make_unique<CRuleKit>(
                seq0Ref,
@@ -3114,12 +3240,23 @@ u_RuleKit = std::make_unique<CRuleKit>(
 //======================================================================================================/
 // Define CFactFromAntecedentSubject object
 
-   u_ahuOutputOkay =   std::make_unique<CFactFromAntecedentSubject>(
-                        seq0Ref,
-                        *u_Subject,
-                        EDataLabel::Fact_antecedent_vav_ahuOkay,
-                        domainRef,
-                        ahuName );
+   if ( dynamicAhuSubjectKey.empty() ) {
+      // Legacy/default startup path.
+      u_ahuOutputOkay =   std::make_unique<CFactFromAntecedentSubject>(
+                           seq0Ref,
+                           *u_Subject,
+                           EDataLabel::Fact_antecedent_vav_ahuOkay,
+                           domainRef,
+                           ahuName );
+   } else {
+      // S223 startup path: find the upstream AHU by RDF resource key in Domain.
+      u_ahuOutputOkay =   std::make_unique<CFactFromAntecedentSubject>(
+                           seq0Ref,
+                           *u_Subject,
+                           EDataLabel::Fact_antecedent_vav_ahuOkay,
+                           domainRef,
+                           dynamicAhuSubjectKey );
+   }
 
 //======================================================================================================/
 // Define CFactFromFacts objects
@@ -3785,6 +3922,189 @@ CTool_vav_ibal::~CTool_vav_ibal( void ) { /* Emtpy d-tor*/ }
 /////////1/////////2/////////3/////////4/////////5/////////6/////////7/////////8/////////9/////////C/////
 // Begin Application implementation
 
+namespace {
+
+void LogS223StartupSummary(const S223ModelLoadSummary& s223Summary) {
+   std::cout << "Loaded ASHRAE 223 ontology from " << s223Summary.ontology.path
+             << " (" << s223Summary.ontology.quadCount << " quads) and site model from "
+             << s223Summary.site.path << " (" << s223Summary.site.quadCount
+             << " quads); total quads: " << s223Summary.TotalQuadCount() << std::endl;
+   if (s223Summary.shacl.engineAvailable) {
+      std::cout << "Ran ASHRAE 223 SHACL-AF inference and SHACL validation with shifty; conforms: "
+                << (s223Summary.shacl.conforms ? "yes" : "no") << std::endl;
+      if (!s223Summary.shacl.diagnosticsJson.empty()
+          && s223Summary.shacl.diagnosticsJson != "[]") {
+         std::cout << "ASHRAE 223 SHACL diagnostics: "
+                   << s223Summary.shacl.diagnosticsJson << std::endl;
+      }
+      if (!s223Summary.shacl.conforms
+          && !s223Summary.shacl.resultsText.empty()) {
+         std::cout << s223Summary.shacl.resultsText << std::endl;
+      }
+   } else {
+      std::cout << "ASHRAE 223 SHACL inference and validation skipped; build without shifty"
+                << std::endl;
+   }
+}
+
+void AddToolFromS223Spec(  std::vector< std::unique_ptr<ATool> >& tools,
+                           const S223ToolStartupSpec& spec,
+                           EUnitSystem unitSys,
+                           CDomain& domain,
+                           const CClockPerPort& clock,
+                           CSequence& sequence,
+                           CController& controller,
+                           CView& view,
+                           CPortOmni& omniPort ) {
+   const auto profile = FindBuiltInToolProfile(spec.toolProfileId);
+   if (!profile.has_value()) {
+      std::ostringstream msg;
+      msg << "S223 startup requested unknown tool profile " << spec.toolProfileId
+          << " for " << spec.rdfResource;
+      throw std::runtime_error(msg.str());
+   }
+
+   switch (profile->legacyConstructor) {
+      case LegacyToolConstructorId::AhuIbal:
+         tools.push_back(
+            std::make_unique<CTool_ahu_ibal>(   unitSys,
+                                                domain,
+                                                spec,
+                                                clock,
+                                                sequence,
+                                                controller,
+                                                view,
+                                                omniPort
+            )
+         );
+         break;
+
+      case LegacyToolConstructorId::VavIbal:
+         tools.push_back(
+            std::make_unique<CTool_vav_ibal>(   unitSys,
+                                                domain,
+                                                spec,
+                                                clock,
+                                                sequence,
+                                                controller,
+                                                view,
+                                                omniPort
+            )
+         );
+         break;
+
+      case LegacyToolConstructorId::ChillerIbal:
+      case LegacyToolConstructorId::TesIbal:
+         {
+            std::ostringstream msg;
+            msg << "S223 startup profile " << spec.toolProfileId
+                << " is matched but has no dynamic constructor wired yet";
+            throw std::runtime_error(msg.str());
+         }
+   }
+}
+
+void AddDefaultTools(  std::vector< std::unique_ptr<ATool> >& tools,
+                       EUnitSystem unitSys,
+                       CDomain& domain,
+                       const CClockPerPort& clock,
+                       CSequence& sequence,
+                       CController& controller,
+                       CView& view,
+                       CPortOmni& omniPort ) {
+   tools.push_back(
+      std::make_unique<CTool_ahu_ibal>(   unitSys,
+                                          domain,
+                                          EDataLabel::Subject_ahu_singleDuct_vavReheat,
+                                          ERealName::Subject_ahu1,
+                                          ERealName::Subject_chwPlant,
+                                          ERealName::Subject_hwPlant_sim,
+                                          clock,
+                                          sequence,
+                                          controller,
+                                          view,
+                                          omniPort
+      )
+   );
+
+   tools.push_back(
+      std::make_unique<CTool_ahu_ibal>(   unitSys,
+                                          domain,
+                                          EDataLabel::Subject_ahu_singleDuct_vavReheat,
+                                          ERealName::Subject_ahu2,
+                                          ERealName::Subject_chwPlant,
+                                          ERealName::Subject_hwPlant_sim,
+                                          clock,
+                                          sequence,
+                                          controller,
+                                          view,
+                                          omniPort
+      )
+   );
+
+   tools.push_back(
+      std::make_unique<CTool_vav_ibal>(   unitSys,
+                                          domain,
+                                          EDataLabel::Subject_vav_pressIndep_hwReheat,
+                                          ERealName::Subject_vav1,
+                                          ERealName::Subject_ahu2,
+                                          ERealName::Subject_hwPlant_sim,
+                                          clock,
+                                          sequence,
+                                          controller,
+                                          view,
+                                          omniPort
+      )
+   );
+
+   tools.push_back(
+      std::make_unique<CTool_vav_ibal>(   unitSys,
+                                          domain,
+                                          EDataLabel::Subject_vav_pressIndep_hwReheat,
+                                          ERealName::Subject_vav2,
+                                          ERealName::Subject_ahu2,
+                                          ERealName::Subject_hwPlant_sim,
+                                          clock,
+                                          sequence,
+                                          controller,
+                                          view,
+                                          omniPort
+      )
+   );
+
+   tools.push_back(
+      std::make_unique<CTool_vav_ibal>(   unitSys,
+                                          domain,
+                                          EDataLabel::Subject_vav_pressIndep_hwReheat,
+                                          ERealName::Subject_vav3,
+                                          ERealName::Subject_ahu1,
+                                          ERealName::Subject_hwPlant_sim,
+                                          clock,
+                                          sequence,
+                                          controller,
+                                          view,
+                                          omniPort
+      )
+   );
+
+   tools.push_back(
+      std::make_unique<CTool_vav_ibal>(   unitSys,
+                                          domain,
+                                          EDataLabel::Subject_vav_pressIndep_hwReheat,
+                                          ERealName::Subject_vav4,
+                                          ERealName::Subject_ahu1,
+                                          ERealName::Subject_hwPlant_sim,
+                                          clock,
+                                          sequence,
+                                          controller,
+                                          view,
+                                          omniPort
+      )
+   );
+}
+
+} // namespace
+
 CApplication::CApplication( void )
                   :  unitSys (EUnitSystem::SI),
                      u_Domain( std::make_unique<CDomain>( ERealName::Domain_ibal ) ),
@@ -3805,125 +4125,37 @@ CApplication::CApplication( void )
                      u_EachToolInApp(0) {
 
    if (auto s223Config = ReadS223ModelLoadConfigFromEnvironment(); s223Config.has_value()) {
-      const auto s223Summary = LoadS223ModelFromTurtleFiles(*s223Config);
-      std::cout << "Loaded ASHRAE 223 ontology from " << s223Summary.ontology.path
-                << " (" << s223Summary.ontology.quadCount << " quads) and site model from "
-                << s223Summary.site.path << " (" << s223Summary.site.quadCount
-                << " quads); total quads: " << s223Summary.TotalQuadCount() << std::endl;
-      if (s223Summary.shacl.engineAvailable) {
-         std::cout << "Ran ASHRAE 223 SHACL-AF inference and SHACL validation with shifty; conforms: "
-                   << (s223Summary.shacl.conforms ? "yes" : "no") << std::endl;
-         if (!s223Summary.shacl.diagnosticsJson.empty()
-             && s223Summary.shacl.diagnosticsJson != "[]") {
-            std::cout << "ASHRAE 223 SHACL diagnostics: "
-                      << s223Summary.shacl.diagnosticsJson << std::endl;
-         }
-         if (!s223Summary.shacl.conforms
-             && !s223Summary.shacl.resultsText.empty()) {
-            std::cout << s223Summary.shacl.resultsText << std::endl;
-         }
-      } else {
-         std::cout << "ASHRAE 223 SHACL inference and validation skipped; build without shifty"
-                   << std::endl;
+      auto s223StartupModel = LoadS223ApplicationStartupModel(*s223Config);
+      LogS223StartupSummary(s223StartupModel.loadSummary);
+
+      for (const auto& toolSpec : s223StartupModel.tools) {
+         AddToolFromS223Spec(  u_EachToolInApp,
+                               toolSpec,
+                               unitSys,
+                              *u_Domain,
+                              *u_Clock,
+                              *u_Seq0,
+                              *u_Ctrlr,
+                              *u_View,
+                              *u_OmniPort );
       }
+      std::cout << "Instantiated " << u_EachToolInApp.size()
+                << " tool(s) from ASHRAE 223 startup model" << std::endl;
+
+      // Stash for REST debugging endpoints (validation report, site graph
+      // before/after inference, per-candidate creatable/near-miss report).
+      u_Domain->SetS223StartupModel( std::move( s223StartupModel ) );
+      return;
    }
 
-
-   u_EachToolInApp.push_back(
-
-      std::make_unique<CTool_ahu_ibal>(   unitSys,
-                                         *u_Domain,  
-                                          EDataLabel::Subject_ahu_singleDuct_vavReheat,
-                                          ERealName::Subject_ahu1,
-                                          ERealName::Subject_chwPlant,
-                                          ERealName::Subject_hwPlant_sim,
-                                          *u_Clock,
-                                          *u_Seq0,
-                                          *u_Ctrlr,
-                                          *u_View,
-                                          *u_OmniPort
-      )
-   );  // end pushback call
-
-   u_EachToolInApp.push_back(
-
-      std::make_unique<CTool_ahu_ibal>(   unitSys,
-                                          *u_Domain,  
-                                          EDataLabel::Subject_ahu_singleDuct_vavReheat,
-                                          ERealName::Subject_ahu2,
-                                          ERealName::Subject_chwPlant,
-                                          ERealName::Subject_hwPlant_sim,
-                                          *u_Clock,
-                                          *u_Seq0,
-                                          *u_Ctrlr,
-                                          *u_View,
-                                          *u_OmniPort
-      )
-   );  // end pushback call
-
-   u_EachToolInApp.push_back(
-
-      std::make_unique<CTool_vav_ibal>(   unitSys,
-                                          *u_Domain,  
-                                          EDataLabel::Subject_vav_pressIndep_hwReheat,
-                                          ERealName::Subject_vav1,
-                                          ERealName::Subject_ahu2,
-                                          ERealName::Subject_hwPlant_sim,
-                                          *u_Clock,
-                                          *u_Seq0,
-                                          *u_Ctrlr,
-                                          *u_View,
-                                          *u_OmniPort
-      )
-   );
-
-   u_EachToolInApp.push_back(
-
-      std::make_unique<CTool_vav_ibal>(   unitSys,
-                                          *u_Domain,  
-                                          EDataLabel::Subject_vav_pressIndep_hwReheat,
-                                          ERealName::Subject_vav2,
-                                          ERealName::Subject_ahu2,
-                                          ERealName::Subject_hwPlant_sim,
-                                          *u_Clock,
-                                          *u_Seq0,
-                                          *u_Ctrlr,
-                                          *u_View,
-                                          *u_OmniPort
-      )
-   );
-   
-   u_EachToolInApp.push_back(
-
-      std::make_unique<CTool_vav_ibal>(   unitSys,
-                                          *u_Domain,  
-                                          EDataLabel::Subject_vav_pressIndep_hwReheat,
-                                          ERealName::Subject_vav3,
-                                          ERealName::Subject_ahu1,
-                                          ERealName::Subject_hwPlant_sim,
-                                          *u_Clock,
-                                          *u_Seq0,
-                                          *u_Ctrlr,
-                                          *u_View,
-                                          *u_OmniPort
-      )
-   );
-
-   u_EachToolInApp.push_back(
-
-      std::make_unique<CTool_vav_ibal>(   unitSys,
-                                          *u_Domain,  
-                                          EDataLabel::Subject_vav_pressIndep_hwReheat,
-                                          ERealName::Subject_vav4,
-                                          ERealName::Subject_ahu1,
-                                          ERealName::Subject_hwPlant_sim,
-                                          *u_Clock,
-                                          *u_Seq0,
-                                          *u_Ctrlr,
-                                          *u_View,
-                                          *u_OmniPort
-      )
-   );
+   AddDefaultTools( u_EachToolInApp,
+                    unitSys,
+                   *u_Domain,
+                   *u_Clock,
+                   *u_Seq0,
+                   *u_Ctrlr,
+                   *u_View,
+                   *u_OmniPort );
 
 }   // End CApplication constructor
 

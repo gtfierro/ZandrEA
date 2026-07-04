@@ -18,8 +18,11 @@ See the License for the specific language governing permissions and limitations 
 #define SUBJECT_HPP
 
 #include "guiShadow.hpp"      // brings customTypes.hpp, which brings exportTypes.hpp
+#include "s223Model.hpp"
 
 #include <memory>
+#include <optional>
+#include <string>
 
 class CCaseKit;
 class CDomain;
@@ -53,6 +56,7 @@ class ASubject : public IGuiShadow {
       std::string                   SayNumRuleKitsAsText( void ) const;
       std::string                   SayDomainAndOwnNameAsText( void ) const;
       std::string                   SayNameAsText( void ) const;
+      std::string                   SaySubjectKey( void ) const;
       EDataLabel                    SayLabel( void ) const;
       ERealName                     SayName( void ) const;
       CCaseKit&                     SayCaseKitRef( void ) const;
@@ -83,6 +87,9 @@ class ASubject : public IGuiShadow {
       const EUnitSystem                   unitSys;     
       const EDataLabel                    ownLabel;
       const ERealName                     ownName;
+      const std::string                   ownSubjectKey;
+      const std::string                   ownNameText;
+      const std::string                   ownDiskFileStem;
       Nzint_t                             nextSgiForCases;
       Nzint_t                             nextSgiForRuleKits;
       bool                                unitOutputOkay;
@@ -96,6 +103,12 @@ class ASubject : public IGuiShadow {
                   CDomain&,
                   EDataLabel,
                   ERealName );
+
+      ASubject(   EUnitSystem,
+                  CDomain&,
+                  EDataLabel,
+                  std::string,
+                  std::string );
 };
 
 //=====================================================================================================/
@@ -118,12 +131,26 @@ class CSubj_vav_ibal : public ASubject {
                         float,         // reheat HW flow, rated (zero if electric RH)
                         float );       // kW reheat, rated (zero if RH by HW plant sim)
 
+      CSubj_vav_ibal(   EUnitSystem,
+                        CDomain&,
+                        EDataLabel,
+                        std::string,   // own dynamic subject key
+                        std::string,   // own display name
+                        std::string,   // AHU dynamic subject key
+                        ERealName,     // Reheat source name
+                        float,
+                        float,
+                        float,
+                        float,
+                        float );
+
       ~CSubj_vav_ibal( void );
 
    private:
 
    // Fields
       const ERealName      nameAntecedentAhu;
+      const std::string    keyAntecedentAhu;
       const ERealName      nameAntecedentHwPlant;      
       const float          diamDuct;
       const float          areaAirflow;
@@ -158,6 +185,18 @@ class CSubj_ahu_ibal : public ASubject {
                         float,               // CHW flow, rated
                         float,               // kW preheat, rated
                         float );             // min fraction OA
+
+      CSubj_ahu_ibal(   EUnitSystem,
+                        CDomain&,
+                        EDataLabel,
+                        std::string,         // own dynamic subject key
+                        std::string,         // own display name
+                        ERealName,           // CHW plant name
+                        ERealName,           // preheat source name
+                        float,
+                        float,
+                        float,
+                        float );
 
       ~CSubj_ahu_ibal( void );
 
@@ -300,9 +339,11 @@ class CDomain : public IGuiShadow {
       std::string                      SayRootTextForDiskFilenames( void ) const;
       ERealName                        SayName( void ) const;
       const ASubject* const            SayPtrToSubjectNamed( ERealName ) const;
+      const ASubject* const            SayPtrToSubjectKey( const std::string& ) const;
       CView* const                     SayViewPtr( void ) const;
       void                             Register( CView* const );
       void                             Register( ASubject* const, ERealName );
+      void                             Register( ASubject* const, const std::string& );
 
 
 
@@ -310,16 +351,28 @@ class CDomain : public IGuiShadow {
                                                          ERealName,
                                                          EDataLabel,
                                                          EAlertMsg );
+      void                             PostAsNewAlert(   time_t,
+                                                         const std::string&,
+                                                         EDataLabel,
+                                                         EAlertMsg );
+
+      // Populated once, by CApplication's constructor, only when startup used
+      // the ASHRAE 223 RDF path. Absent (nullopt) when the legacy fixed tool
+      // set was used instead. Exposed read-only for REST debugging endpoints.
+      void                             SetS223StartupModel( S223ApplicationStartupModel );
+      const std::optional<S223ApplicationStartupModel>&   SayS223StartupModel( void ) const;
 
    private:
 
       SubjOutputsTable_t                                 p_SubjOutputs_byName_byLabel;
       std::unordered_map<ERealName, ASubject*>           p_Subjects_byName;
+      std::unordered_map<std::string, ASubject*>         p_Subjects_byKey;
       CView*                                             p_View;
       //ParamPack_t                                      ownParamPack;
       std::queue<std::string>                            unsaidAlertsFifo;
       EnergyPrices_t                                     energyPrices;
       const ERealName                                    domainName;
+      std::optional<S223ApplicationStartupModel>         s223StartupModel;
    
 
 

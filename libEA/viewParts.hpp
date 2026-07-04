@@ -21,6 +21,7 @@ See the License for the specific language governing permissions and limitations 
 
 #include <functional>
 #include <queue>
+#include <string>
 
 // Forward declares
 class AFact;
@@ -193,7 +194,7 @@ class ATrace : public IGuiShadow {
       virtual GuiPackTraceDyna_t       SayDynamicGuiPack( void ) const = 0;
 
       int                              SaySecondsPerIndex( void ) const;   // See Class Note [1]
-      ERealName                        SayHostSubjectName( void ) const;
+      std::string                      SayHostSubjectKey( void ) const;
       EDataUnit                        SayUnits( void ) const;             // for compat. check on traces
       EDataRange                       SayRange( void ) const;             // for compat. check on traces
       EPlotGroup                       SayPlotGroup( void ) const;
@@ -338,7 +339,7 @@ class APane : public IGuiShadow {
       const int                  xAxisSecsPerIndex;
       const EDataUnit            yAxisUnits;
       const EDataRange           yAxisRange;
-      const ERealName            hostSubject;
+      const std::string          hostSubjectKey;
       const EPlotGroup           plotGroup;
 
 

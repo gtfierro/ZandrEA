@@ -368,12 +368,35 @@ CFactFromAntecedentSubject::CFactFromAntecedentSubject(  CSequence& bArg0,
                                                                      bArg1,
                                                                      bArg2,
                                                                      std::vector<AFact*>(0) 
-                                                            ),
+                                                             ),
                                                             p_AnteSubj ( arg0.SayPtrToSubjectNamed(arg1) ),
-                                                            anteSubjName (arg1) {
+                                                            anteSubjName (arg1),
+                                                            anteSubjKey ("") {
 
    if (p_AnteSubj == nullptr) {
       throw std::logic_error( "Fact constructed before its antecedent Subject" );
+   }
+   CalcOwnTriggerGroup();
+}
+
+// Dynamic antecedent constructor used by S223-created tools.  arg1 is the
+// antecedent subject key, normally the RDF resource IRI of the upstream tool.
+CFactFromAntecedentSubject::CFactFromAntecedentSubject(  CSequence& bArg0,
+                                                         ASubject& bArg1,
+                                                         EDataLabel bArg2,
+                                                         CDomain& arg0,
+                                                         std::string arg1 )
+                                                         :  AFact(   bArg0,
+                                                                     bArg1,
+                                                                     bArg2,
+                                                                     std::vector<AFact*>(0) 
+                                                            ),
+                                                            p_AnteSubj ( arg0.SayPtrToSubjectKey(arg1) ),
+                                                            anteSubjName (ERealName::Undefined),
+                                                            anteSubjKey (std::move(arg1)) {
+
+   if (p_AnteSubj == nullptr) {
+      throw std::logic_error( "Fact constructed before its dynamic antecedent Subject" );
    }
    CalcOwnTriggerGroup();
 }

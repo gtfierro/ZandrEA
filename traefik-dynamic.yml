@@ -1,0 +1,32 @@
+http:
+  routers:
+    rest:
+      entryPoints:
+        - front
+      rule: PathPrefix(`/api/`)
+      middlewares:
+        - rest-stripprefix
+      service: rest
+
+    webapp:
+      entryPoints:
+        - front
+      rule: PathPrefix(`/`)
+      service: webapp
+
+  middlewares:
+    rest-stripprefix:
+      stripPrefix:
+        prefixes:
+          - /api
+
+  services:
+    rest:
+      loadBalancer:
+        servers:
+          - url: http://rest:9876
+
+    webapp:
+      loadBalancer:
+        servers:
+          - url: http://webapp:3000

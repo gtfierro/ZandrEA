@@ -177,44 +177,41 @@ error, not a silent null.
 
 ## 6. The assembler / new entrypoint
 
-A new parallel entrypoint (proposed `CApplicationFromProfiles`, or an env switch)
-that never touches `AddDefaultTools` or the `CTool_*` constructors:
+**We reuse the existing `CTool_*` constructors; we do not rebuild the analysis
+graph.** The `CTool_ahu_ibal`/`CTool_vav_ibal` constructors already build the
+whole 117-object graph (points, formulas, charts, facts, evidence, hypotheses,
+rules, features) internally. The model-driven path only decides *which* tools to
+instantiate, with *what* name and *what* antecedent wiring, and calls those
+existing constructors — exactly what `AddToolFromS223Spec` + the `CApplication`
+loop already do. The pipeline:
 
 1. Load `zea-core.ttl` + `zea-profiles.ttl` as shapes/rules; the site model as
    data.
 2. `witnesses(site, {key_path:"zea:roleName", run_inference:true})`.
-3. Group witnesses by `focus_node` → one candidate tool per conforming equipment.
-4. For point roles: build `CPointAnalog`/`CPointBinary` from `zea:present` +
-   attach the bound RDF property/channel IRI as the ingestion identity (this is
-   what finally lets data ingestion resolve real device channels from the model).
-   For antecedent roles: link to the already-built tool.
-5. Assemble `RoleBoundPoints`, look up the module by `zea:analysisModule`, call
-   `Build`. Antecedents are built first via a topological sort over the
-   `zea:requiredToolProfileId` graph.
+3. `AssembleTools(...)` → group by `focus_node`, dispatch to the module by
+   `shape_id`, reconcile against the manifest, resolve antecedents, topologically
+   order (`libEA/toolAssembler.cpp`).
+4. `StartupSpecsFromModel(...)` projects the ordered model onto
+   `std::vector<S223ToolStartupSpec>` — the surface `AddToolFromS223Spec` already
+   consumes.
+5. The existing `CApplication` loop calls the existing `CTool_*` constructors in
+   order. **No engine/FDD code is touched.**
 
-### The analysis-module boundary
+### The analysis module's job
 
-```cpp
-class RoleBoundPoints {
- public:
-   CPointAnalog* Analog(RoleId) const;   // concrete type (rules need u_Rain etc.)
-   CPointBinary* Binary(RoleId) const;
-   bool          IsBound(RoleId) const;  // optional roles
-   const RoleBoundPoints& Antecedent(RoleId) const;  // an antecedent's own bound points
-};
+Because instantiation reuses the existing constructors, the module does **not**
+rebuild facts against roles. Its `ModuleManifest` (`libEA/toolModules.cpp`) only:
 
-class IAnalysisModule {
-   virtual std::vector<RoleSpec> Roles() const = 0;              // reconciled vs. profile
-   virtual void Build(const RoleBoundPoints&, CRuleKit&, BuildCtx) = 0;  // builds CFact/CRule as today
-};
-```
+- names the tool's point roles as `role → EPointName` — used to validate the
+  model supplies them, and to carry the resolved RDF property per role for future
+  channel-native ingestion; and
+- declares its antecedent roles + the profile each must resolve to.
 
-An economizer fact that today reads `u_Tao->u_Rain->NowY() - u_Tar->u_Rain->NowY()`
-becomes, inside `AhuVavReheatModule::Build`, `p.Analog(ahu_vav::outsideAirTemp)`
-… `p.Analog(ahu_vav::returnAirTemp)` with identical `CFact` construction. The
-module is equipment-type-specific but tool-instance- and RDF-agnostic, reusable
-across every AHU in every site. A future declarative rule DSL is just another
-`IAnalysisModule` — the seam does not move.
+The engine-facing point attributes (unit, range, plot group, label) stay owned by
+the constructor — the manifest deliberately does **not** duplicate them. (A future
+option, if desired, is to have a module `Build` the graph against roles instead of
+the legacy constructor — a large, verification-heavy port — but it is explicitly
+out of scope; the existing constructors are the instantiation path.)
 
 ## 7. Usage
 
@@ -266,6 +263,23 @@ createable equipment, `zea:pointRole` on each bound property. Run the witness
 pass; anything that does not conform is reported by `validate()` with the exact
 missing role/antecedent.
 
+### Enable the profile-driven path in `ead`
+
+Startup discovery switches to the witness/assembler path when the profile shapes
+are configured, alongside the existing S223 env vars:
+
+```sh
+export EA_S223_ONTOLOGY_TTL=/path/to/223p.ttl
+export EA_S223_SITE_TTL=/path/to/site.ttl
+export EA_S223_PROFILE_SHAPES_TTL=/path/to/zea-core.ttl:/path/to/zea-profiles.ttl   # ':'-separated
+```
+
+When `EA_S223_PROFILE_SHAPES_TTL` is set, `LoadS223ApplicationStartupModel`
+discovers tools via `tool_specs_via_profile_witnesses` (witnesses → assembler →
+`StartupSpecsFromModel`) instead of the legacy generated-CONSTRUCT discovery; the
+`CApplication` loop and `CTool_*` constructors are unchanged. Unset, the legacy
+discovery path runs as before.
+
 ## 8. Proof: what has been validated
 
 Run against `EAd/tests/testdata/simple-ahu-vav-223.ttl` (1 AHU + 2 VAVs, fully
@@ -290,51 +304,57 @@ discovery/diagnostics — is exercised by this run.
 
 ## 9. Relationship to the legacy path
 
-The legacy default startup (`AddDefaultTools`, the enum-slot `CTool_*`
-constructors, `EPointName`) is unchanged and remains the fallback when no S223
-config is present. It is the one sanctioned place with hardcoded tool references.
-The profile-driven path is a *new* entrypoint; the AHU/VAV analysis modules
-reimplement the FDD against roles once, producing the same `CFact`/`CRule`/
-`CSubject`/`CView` graph the engine runs — so nothing about the legacy stack
-needs to be preserved bug-for-bug.
+The legacy default startup (`AddDefaultTools`, the enum-slot layout) is unchanged
+and remains the fallback when no S223 config is present. The profile-driven path
+reuses the *same* `CTool_ahu_ibal`/`CTool_vav_ibal` constructors as the legacy
+and existing-S223 paths — it only changes how the tool list is discovered
+(witnesses + assembler) and keys instances by RDF resource + `zea:name` instead
+of fixed enum slots. No FDD/engine code is reimplemented or duplicated.
 
 ## 10. Implementation status
 
-The **RDF → resolved-tool half is implemented and proven** (`libEA`, built into
-`ead` via the `libEA/*.cpp` wildcard; standalone harness
-`EAd/tests/assembler_probe.cpp`):
+The **full discovery → instantiation path is implemented** (`libEA`, built into
+`ead` via the `libEA/*.cpp` wildcard):
 
-- `libEA/toolRole.hpp` — `RoleId`, `PointRoleSpec`, `AntecedentRoleSpec`,
-  `ModuleManifest`, and the `RoleWitness` → `ResolvedTool`/`ResolvedToolModel`
-  types. Depends only on the leaf engine enums (`customTypes.hpp`), no shifty.
+- `libEA/toolRole.hpp` — `RoleId`, `PointRoleSpec` (`role → EPointName`),
+  `AntecedentRoleSpec`, `ModuleManifest`, and `RoleWitness` →
+  `ResolvedTool`/`ResolvedToolModel`. Depends only on the leaf `EPointName` enum,
+  no shifty.
 - `libEA/analysisModule.{hpp,cpp}` — `IAnalysisModule` + `CModuleRegistry` keyed
   by profile node-shape IRI (== witness `shape_id`).
-- `libEA/toolModules.cpp` — the built-in `CAhuModule`/`CVavModule` manifests. Each
-  role carries the exact `EPointName`/`EDataLabel`/`EDataUnit`/`EDataRange`/
-  `EPlotGroup` tuple from the legacy `CTool_*` constructor, so resolved points are
-  identical to today's build.
-- `libEA/toolAssembler.{hpp,cpp}` — `AssembleTools(witnesses, registry)`: group by
-  focus, dispatch to module by shape IRI, reconcile witness bindings against the
-  manifest, resolve antecedents, topologically order (Kahn), emit diagnostics.
+- `libEA/toolModules.cpp` — `CAhuModule`/`CVavModule` manifests: `role → EPointName`
+  + antecedent roles. The point unit/range/label/plot-group stay owned by the
+  existing constructor; the manifest does not duplicate them.
+- `libEA/toolAssembler.{hpp,cpp}` — `AssembleTools(witnesses, registry)` (group,
+  dispatch, reconcile, resolve antecedents, topological order, diagnostics) and
+  `StartupSpecsFromModel()` (project onto `std::vector<S223ToolStartupSpec>`).
+- `libEA/s223Model.cpp` — `tool_specs_via_profile_witnesses()` runs the witness
+  pass and assembler; `LoadS223ApplicationStartupModel` uses it when
+  `EA_S223_PROFILE_SHAPES_TTL` is set (`ReadS223ModelLoadConfigFromEnvironment`).
+  The existing `CApplication` loop + `AddToolFromS223Spec` + `CTool_*`
+  constructors instantiate the tools unchanged.
 
-`assembler_probe` against the test model assembles 3 tools in antecedent-safe
-order (AHU-1 → VAV-1, VAV-2), all 22 point roles reconciled and bound to their
-RDF properties, VAV `airSource` → AHU_1, zero diagnostics — confirming the module
-role names match the profile `zea:roleName`s (reconciliation) and the ordering.
+Verified: `assembler_probe` assembles 3 tools in antecedent-safe order with all
+22 roles reconciled and zero diagnostics; the real entrypoint
+`LoadS223ApplicationStartupModel` (exercised against `223p.ttl` +
+`simple-ahu-vav-223.ttl` + the zea shapes) returns the 3 `S223ToolStartupSpec`s
+(`ahu_ibal` AHU-1; `vav_ibal` VAV-1/VAV-2 with `airSource → AHU-1`). The one
+piece not exercised here is the final `CTool_*` construction, which needs the
+full `ead` link (heavy deps) but is unchanged existing code.
 
-### Remaining work (the engine-instantiation half)
+### Remaining work
 
-- Add `IAnalysisModule::Build(RoleBoundPoints&, BuildContext&)` and a
-  `RoleBoundPoints` that owns the constructed `CPointAnalog`/`CPointBinary` per
-  role (built from each `PointRoleSpec`'s engine tuple), fetched by `RoleId`.
-- Implement `CAhuModule::Build`/`CVavModule::Build`: the FDD facts/rules against
-  roles (the reimplementation of the `CTool_*` constructor bodies).
-- The witness runner currently in `EAd/tests/assembler_probe.cpp` moves into
-  `libEA/s223Model.*`; a new entrypoint (`CApplicationFromProfiles` vs. env
-  switch) drives assembler → per-tool `Build` in order, under a `CDomain`.
+- Verify a full `ead` build/run instantiates the tools (link-level check of the
+  unchanged constructor path).
 - Thread each `ResolvedPointBinding::rdfProperty` into its point object for
-  channel-native data ingestion.
+  channel-native data ingestion (a small additive field on the point; today's
+  `EPointName` + column-map ingestion is untouched).
 - Expose the resolved model + `validate()` diagnostics over the `/s223/*`
-  debug endpoints.
+  debug endpoints (the profile-driven `.tools` currently flows through the
+  existing `S223ApplicationStartupModel`; the diagnostic report still comes from
+  the legacy path — reconcile so `/s223/tools` reflects the witness discovery).
 - A strategy for real (unannotated) models: authoring `zea:pointRole` at
   commissioning vs. deriving some roles from native `s223:hasRole` / topology.
+- Optional/only-if-wanted: a role-typed `Build` that constructs the FDD graph
+  instead of the legacy constructor — a large, verification-heavy port, not
+  required by this design.

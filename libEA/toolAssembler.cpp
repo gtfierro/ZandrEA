@@ -184,4 +184,27 @@ ResolvedToolModel AssembleTools(const std::vector<RoleWitness>& witnesses,
    return model;
 }
 
+std::vector<S223ToolStartupSpec> StartupSpecsFromModel(const ResolvedToolModel& model) {
+   std::map<std::string, std::string> nameByFocus;
+   for (const auto& t : model.tools) {
+      nameByFocus[t.focusNode] = t.name;
+   }
+
+   std::vector<S223ToolStartupSpec> specs;
+   specs.reserve(model.tools.size());
+   for (const auto& t : model.tools) {
+      S223ToolStartupSpec spec;
+      spec.toolProfileId = t.toolProfileId;
+      spec.rdfResource   = t.focusNode;
+      spec.name          = t.name;
+      for (const auto& a : t.antecedents) {
+         const auto known = nameByFocus.find(a.focusNode);
+         spec.antecedents.push_back(
+            { a.role.name, a.focusNode, known == nameByFocus.end() ? "" : known->second });
+      }
+      specs.push_back(std::move(spec));
+   }
+   return specs;
+}
+
 //END-OF-FILE ZZZZZ2ZZZZZZZZZ3ZZZZZZZZZ4ZZZZZZZZZ5ZZZZZZZZZ6ZZZZZZZZZ7ZZZZZZZZZ8ZZZZZZZZZ9ZZZZZZZZZCZZZZZ

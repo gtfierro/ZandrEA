@@ -252,7 +252,9 @@ ATrace::~ATrace( void ) {  }
 
 int ATrace::SaySecondsPerIndex( void ) const { return SourceRef.SaySecsPerCycle(); }
 
-ERealName ATrace::SayHostSubjectName( void ) const { return SubjectRef.SayName(); }
+// Use the unified Subject key for pane grouping.  Dynamic S223 subjects have
+// ownName == Undefined, so grouping by ERealName would collapse unrelated traces.
+std::string ATrace::SayHostSubjectKey( void ) const { return SubjectRef.SaySubjectKey(); }
 
 EDataUnit ATrace::SayUnits( void ) const { return SourceRef.SayUnits(); }
 
@@ -518,7 +520,7 @@ APane::APane(  const CTraceRealtime* const arg0,
                   xAxisSecsPerIndex ( arg0->SaySecondsPerIndex() ),
                   yAxisUnits ( arg0->SayUnits() ),
                   yAxisRange ( arg0->SayRange() ),
-                  hostSubject ( arg0->SayHostSubjectName() ),
+                  hostSubjectKey ( arg0->SayHostSubjectKey() ),
                   plotGroup ( arg0->SayPlotGroup() ) {
 
    // empty c-tor
@@ -545,7 +547,7 @@ APane::APane(  const CTraceSnapshot* const arg0,
                   xAxisSecsPerIndex ( arg0->SaySecondsPerIndex() ),
                   yAxisUnits ( arg0->SayUnits() ),
                   yAxisRange ( arg0->SayRange() ),
-                  hostSubject (arg0->SayHostSubjectName()),
+                  hostSubjectKey (arg0->SayHostSubjectKey()),
                   plotGroup ( arg0->SayPlotGroup() ) {
 
    // empty c-tor
@@ -597,7 +599,7 @@ bool CPaneRealtime::AddTraceIfCompatible( const CTraceRealtime* const p_tracePro
    // Trace sourced from a "foreign" Subject is plotted "freely", i.e., as having no "group"
    // Pane itself is instantiated by Rule or Case, so its Subject is "native" to those
    EPlotGroup actingPlotGroup = (
-      ( p_traceProposed->SayHostSubjectName() == hostSubject ) ?
+      ( p_traceProposed->SayHostSubjectKey() == hostSubjectKey ) ?
          p_traceProposed->SayPlotGroup() :
          EPlotGroup::Free
    );
@@ -636,7 +638,7 @@ bool CPaneSnapshot::AddTraceIfCompatible( const CTraceSnapshot* const p_tracePro
    // Trace sourced from a "foreign" Subject is plotted "freely", i.e., as having no "group"
    // Pane itself is instantiated by Rule or Case, so its Subject is "native" to those
    EPlotGroup actingPlotGroup = (
-      ( p_traceProposed->SayHostSubjectName() == hostSubject ) ?
+      ( p_traceProposed->SayHostSubjectKey() == hostSubjectKey ) ?
          p_traceProposed->SayPlotGroup() :
          EPlotGroup::Free
    );

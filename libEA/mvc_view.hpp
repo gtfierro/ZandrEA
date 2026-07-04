@@ -20,6 +20,7 @@ See the License for the specific language governing permissions and limitations 
 #define MVC_VIEW_HPP
 
 #include "customTypes.hpp"
+#include "s223Model.hpp"
 
 #include <memory>
 
@@ -102,6 +103,13 @@ class CView {
       std::string                SayTextIdentifyingHistogram( NGuiKey ) const;
       EGuiReply                  SetModeOfHistogramToOptionIndex( NGuiKey, size_t );
       EGuiReply                  SetSpanOfHistogramToOptionIndex( NGuiKey, size_t );
+
+      GuiPackS223Status_t        SayS223Status( void ) const;
+      std::string                SayS223ValidationReportTurtle( void ) const;
+      std::string                SayS223ValidationResultsText( void ) const;
+      std::string                SayS223ValidationDiagnosticsJson( void ) const;
+      std::string                SayS223SiteGraphNTriples( bool inferred ) const;
+      S223ToolDiagnosticReport    SayS223ToolConfigurationReport( void ) const;
 
       void                       AddCaseToCaseKitLookup( NGuiKey, CCaseKit* );
       void                       RemoveCaseFromCaseKitLookup( NGuiKey );

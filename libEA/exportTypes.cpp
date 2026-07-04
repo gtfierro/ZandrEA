@@ -514,4 +514,26 @@ SGuiPackSubjectCases::SGuiPackSubjectCases(  EGuiReply arg )
 }
 
 
+SGuiPackS223Status::SGuiPackS223Status(  bool arg0,
+                                          bool arg1,
+                                          std::string arg2,
+                                          std::size_t arg3,
+                                          std::string arg4,
+                                          std::size_t arg5,
+                                          std::size_t arg6,
+                                          std::size_t arg7,
+                                          std::size_t arg8 )
+                                          :  getterReply ( EGuiReply::OKAY_allDone ),
+                                             active (arg0),
+                                             conforms (arg1),
+                                             ontologyPath (arg2),
+                                             ontologyQuadCount (arg3),
+                                             sitePath (arg4),
+                                             siteQuadCount (arg5),
+                                             candidateEquipmentCount (arg6),
+                                             creatableToolCount (arg7),
+                                             instantiatedToolCount (arg8) {
+}
+
+
 //END-OF-FILE ZZZZZ2ZZZZZZZZZ3ZZZZZZZZZ4ZZZZZZZZZ5ZZZZZZZZZ6ZZZZZZZZZ7ZZZZZZZZZ8ZZZZZZZZZ9ZZZZZZZZZCZZZZZ

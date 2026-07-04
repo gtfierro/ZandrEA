@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "analysisModule.hpp"
+#include "s223Model.hpp"
 #include "toolRole.hpp"
 
 // Turn raw role witnesses into an ordered, reconciled tool model.  Anything that
@@ -23,6 +24,13 @@
 // cyclic antecedent) is dropped from tools and explained in diagnostics.
 ResolvedToolModel AssembleTools(const std::vector<RoleWitness>& witnesses,
                                 const CModuleRegistry& modules);
+
+// Project the resolved model onto the existing S223 startup-spec surface that
+// AddToolFromS223Spec / the CApplication instantiation loop already consume.  The
+// existing CTool_* constructors build the point/fact/rule graph; this only
+// carries which tool, its display name, and its antecedent bindings by RDF
+// resource.  Order is preserved (antecedents first).
+std::vector<S223ToolStartupSpec> StartupSpecsFromModel(const ResolvedToolModel& model);
 
 #endif
 

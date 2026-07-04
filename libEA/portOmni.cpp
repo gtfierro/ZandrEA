@@ -235,4 +235,40 @@ EGuiReply CPortOmni::SetSpanOfHistogramToZeroBasedOptionIndex(   NGuiKey histogr
 }
 
 
+GuiPackS223Status_t CPortOmni::SayS223Status( void ) const {
+
+   return ViewRef.SayS223Status();
+}
+
+
+std::string CPortOmni::SayS223ValidationReportTurtle( void ) const {
+
+   return ViewRef.SayS223ValidationReportTurtle();
+}
+
+
+std::string CPortOmni::SayS223ValidationResultsText( void ) const {
+
+   return ViewRef.SayS223ValidationResultsText();
+}
+
+
+std::string CPortOmni::SayS223ValidationDiagnosticsJson( void ) const {
+
+   return ViewRef.SayS223ValidationDiagnosticsJson();
+}
+
+
+std::string CPortOmni::SayS223SiteGraphNTriples( bool inferred ) const {
+
+   return ViewRef.SayS223SiteGraphNTriples( inferred );
+}
+
+
+S223ToolDiagnosticReport CPortOmni::SayS223ToolConfigurationReport( void ) const {
+
+   return ViewRef.SayS223ToolConfigurationReport();
+}
+
+
 //END-OF-FILE ZZZZZ2ZZZZZZZZZ3ZZZZZZZZZ4ZZZZZZZZZ5ZZZZZZZZZ6ZZZZZZZZZ7ZZZZZZZZZ8ZZZZZZZZZ9ZZZZZZZZZCZZZZZ

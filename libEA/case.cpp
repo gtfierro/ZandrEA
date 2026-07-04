@@ -142,7 +142,7 @@ const GuiOptionSet_t CCase::choice_ForCaseSpentOut = {
 //VVVVVVV1VVVVVVVVV2VVVVVVVVV3VVVVVVVVV4VVVVVVVVV5VVVVVVVVV6VVVVVVVVV7VVVVVVVVV8VVVVVVVVV9VVVVVVVVVCVVVVV
 // static functions of class
 
-std::string CCase::InitReportPreamble( ERealName subjName,
+std::string CCase::InitReportPreamble( const std::string& subjName,
                                        time_t trapTime,
                                        int trapTrigger,
                                        int secsPerRuleCycle,
@@ -154,7 +154,7 @@ std::string CCase::InitReportPreamble( ERealName subjName,
    // (note: \n and \0 = one char each)
    err = ctime_s( timestampChars, 26, &trapTime ); 
 
-   return ( "At " + LookUpText( subjName ) +
+   return ( "At " + subjName +
             " by sample: " + std::to_string( trapTrigger ) +
             " time: " + std::string( timestampChars ) +
             " : FAILS " +
@@ -215,7 +215,7 @@ CCase::CCase(  CRuleKit& ruleKitRef,
                               ":Case #" + SayIdentifierAsThreeDigitText( caseSgi ) +
                               "-Failing " + arg3.SayRuleUaiText()
                   ),
-                  reportPreamble ( InitReportPreamble(   arg0.SayName(),
+                  reportPreamble ( InitReportPreamble(   arg0.SayNameAsText(),
                                                          arg1,
                                                          arg6,
                                                          arg2,

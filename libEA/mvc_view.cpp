@@ -381,6 +381,63 @@ void CView::LoseAccessTo( CTraceSnapshot* const ptr ) {
 }
 
 
+GuiPackS223Status_t CView::SayS223Status( void ) const {
+
+   const auto& startupModel = DomainRef.SayS223StartupModel();
+
+   if ( !startupModel.has_value() ) {
+      return GuiPackS223Status_t( false, false, "", 0, "", 0, 0, 0, 0 );
+   }
+
+   return GuiPackS223Status_t(
+      true,
+      startupModel->loadSummary.shacl.conforms,
+      startupModel->loadSummary.ontology.path,
+      startupModel->loadSummary.ontology.quadCount,
+      startupModel->loadSummary.site.path,
+      startupModel->loadSummary.site.quadCount,
+      startupModel->diagnosticReport.candidates.size(),
+      startupModel->diagnosticReport.CreatableCount(),
+      startupModel->tools.size()
+   );
+}
+
+std::string CView::SayS223ValidationReportTurtle( void ) const {
+
+   const auto& startupModel = DomainRef.SayS223StartupModel();
+   return startupModel.has_value() ? startupModel->loadSummary.shacl.reportTurtle : "";
+}
+
+std::string CView::SayS223ValidationResultsText( void ) const {
+
+   const auto& startupModel = DomainRef.SayS223StartupModel();
+   return startupModel.has_value() ? startupModel->loadSummary.shacl.resultsText : "";
+}
+
+std::string CView::SayS223ValidationDiagnosticsJson( void ) const {
+
+   const auto& startupModel = DomainRef.SayS223StartupModel();
+   return startupModel.has_value() ? startupModel->loadSummary.shacl.diagnosticsJson : "";
+}
+
+std::string CView::SayS223SiteGraphNTriples( bool inferred ) const {
+
+   const auto& startupModel = DomainRef.SayS223StartupModel();
+   if ( !startupModel.has_value() ) {
+      return "";
+   }
+   return inferred ? startupModel->siteGraphInferredNTriples : startupModel->siteGraphRawNTriples;
+}
+
+S223ToolDiagnosticReport CView::SayS223ToolConfigurationReport( void ) const {
+
+   const auto& startupModel = DomainRef.SayS223StartupModel();
+   if ( !startupModel.has_value() ) {
+      return S223ToolDiagnosticReport{};
+   }
+   return startupModel->diagnosticReport;
+}
+
 void CView::AddSubject( ASubject& arg ) {
 
    p_Subjects_byKey.emplace(

@@ -20,6 +20,7 @@ See the License for the specific language governing permissions and limitations 
 #define EXPORTCALLS_HPP
 
 #include "exportTypes.hpp"
+#include "s223Model.hpp"
 
 /*
    A getter starting with "Get***()" is complemented by a setter "Set***()" for that same API field,
@@ -80,6 +81,18 @@ class IExportOmni {
       virtual std::string              SayTextIdentifyingHistogram( NGuiKey ) const = 0;
       virtual EGuiReply                SetModeOfHistogramToZeroBasedOptionIndex( NGuiKey, size_t ) = 0;
       virtual EGuiReply                SetSpanOfHistogramToZeroBasedOptionIndex( NGuiKey, size_t ) = 0;
+
+//''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''/
+// ASHRAE 223 RDF startup debugging: available only when startup used the S223
+// path (see GuiPackS223Status_t::active). All read-only; nothing here can be
+// set, since the RDF model is only loaded once, at process startup.
+
+      virtual GuiPackS223Status_t      SayS223Status( void ) const = 0;
+      virtual std::string              SayS223ValidationReportTurtle( void ) const = 0;
+      virtual std::string              SayS223ValidationResultsText( void ) const = 0;
+      virtual std::string              SayS223ValidationDiagnosticsJson( void ) const = 0;
+      virtual std::string              SayS223SiteGraphNTriples( bool inferred ) const = 0;
+      virtual S223ToolDiagnosticReport SayS223ToolConfigurationReport( void ) const = 0;
 };
 
 

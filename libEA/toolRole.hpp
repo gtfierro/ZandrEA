@@ -16,7 +16,7 @@
 #include <string>
 #include <vector>
 
-#include "customTypes.hpp"   // EDataLabel/EDataUnit/EDataRange/EPlotGroup (+ EPointName via exportTypes)
+#include "exportTypes.hpp"   // EPointName
 
 // Tool-local semantic slot name.  Equality by name; module code refers to these
 // through named constants (see analysisModule.hpp) so a typo is a compile error,
@@ -28,22 +28,16 @@ struct RoleId {
 
 enum class RoleValueKind { Analog, Binary };
 
-// Engine construction contract for one point role.  The analysis engine is fixed
-// and still needs these enums to build a CPointAnalog/CPointBinary, so the module
-// owns them; the RDF profile owns only the finder.  pointName is the ingestion
-// join key the engine requires today (an RDF property IRI is threaded alongside
-// it at resolution time for future channel-native ingestion).
+// Binding contract for one point role.  The existing CTool_* constructor already
+// builds the point object with its unit/range/label/plot-group, so the module
+// does NOT re-declare those; it only maps the role to the EPointName join key
+// (used for validation that the model supplies the point, and later to thread the
+// resolved RDF channel into the right point for ingestion).
 struct PointRoleSpec {
    RoleId        id;
    RoleValueKind valueKind;
+   EPointName    pointName;    // engine ingestion join key
    bool          required;
-
-   EPointName    pointName;    // engine ingestion key
-   EDataLabel    dataLabel;    // point UI label
-   EDataUnit     dataUnit;     // analog only
-   EDataRange    dataRange;    // analog only
-   EPlotGroup    plotGroup;    // analog only
-   EDataLabel    factLabel;    // binary only: the direct-fact label CPointBinary needs
 };
 
 // An antecedent role binds to another equipment that must itself be a creatable

@@ -62,6 +62,14 @@ export PREFIX := $(CURDIR)
 # This is because Dan's Windows WSL environment keeps getting timeouts
 export COMPOSE_HTTP_TIMEOUT = 1000
 
+# ASHRAE 223 startup model inputs for the "rest" container. Paths are
+# container-side (the "ead" process reads them inside the container, not on
+# the host), and are passed through by the environment: entries in
+# docker-compose.yml / docker-compose.podman.yml. 223p.ttl is bind-mounted
+# directly since (unlike EAd/) it isn't already synced into the container.
+export EA_S223_ONTOLOGY_TTL ?= /ea/223p.ttl
+export EA_S223_SITE_TTL ?= /ea/EAd/tests/testdata/NIST-IBAL.ttl
+
 JSCLI := eajscli	# or EAjsClient
 PYTEST_ARGS ?= -q EAd/tests
 
@@ -323,9 +331,6 @@ endif
 # Use app's src file to define any deeper path needed (e.g., a header with #include <grpcpp/grpcpp.h>).
 # Else, INCLUDE of deeper library dirs can shadow calls app makes to system libraries (e.g., <ctime>).
 
-CONAN_GENERATORS_DIR ?= $(PREFIX)/conan
-RDF4CPP_CFLAGS := $(shell PKG_CONFIG_PATH=$(CONAN_GENERATORS_DIR):$${PKG_CONFIG_PATH} pkg-config --cflags rdf4cpp 2>/dev/null)
-RDF4CPP_LIBS := $(shell PKG_CONFIG_PATH=$(CONAN_GENERATORS_DIR):$${PKG_CONFIG_PATH} pkg-config --libs rdf4cpp 2>/dev/null)
 SHIFTY_PREFIX ?=
 SHIFTY_CFLAGS ?= $(if $(SHIFTY_PREFIX),-I$(SHIFTY_PREFIX)/include,)
 SHIFTY_LIBS ?= $(if $(SHIFTY_PREFIX),-L$(SHIFTY_PREFIX)/lib -lshifty_cpp -ldl -pthread -lm,)
@@ -333,7 +338,7 @@ ifneq ($(strip $(SHIFTY_CFLAGS)$(SHIFTY_LIBS)),)
 SHIFTY_DEFS := -DEA_HAVE_SHIFTY
 endif
 
-INCLUDES = -I$(PREFIX)/libEA -I$(PREFIX)/include -I$(HDF5INSTALLDIR)/include $(HB_INCLUDES) $(RDF4CPP_CFLAGS) $(SHIFTY_CFLAGS)
+INCLUDES = -I$(PREFIX)/libEA -I$(PREFIX)/include -I$(HDF5INSTALLDIR)/include $(HB_INCLUDES) $(SHIFTY_CFLAGS)
 
 INCLUDES += -I$(PREFIX)/grpc/include -I$(PREFIX)/protobuf
 #bad way was += $(addprefix -I,$(shell find $(PREFIX)/grpc/include -type d)) -I$(PREFIX)/protobuf
@@ -363,7 +368,6 @@ EAD_DEPS := $(EAD_SRCS:.cpp=.d)
 
 EAD_LIBS := -L$(HDF5INSTALLDIR)/lib \
             -L./lib $(HB_LDFLAGS) \
-            $(RDF4CPP_LIBS) \
             $(SHIFTY_LIBS) \
             -lcpprest $(BOOSTLIBS) \
             -lhdf5 \
