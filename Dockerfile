@@ -125,11 +125,14 @@ COPY ./protobuf/  $PKGROOT/protobuf/
 ENV PATH=$PATH:$PKGROOT/grpc/bin:$PKGROOT/protobuf
 # DAV - END - gRPC (C++ side) install
 #==================================================================================================C====5
-# Build and install shifty C++ SDK. The final ead link is static, so the
-# runtime image does not need the SDK tree copied into it.
+# Build and install shifty C++ SDK from the vendored submodule (third_party/shifty),
+# COPYd in rather than cloned so the container's shifty is pinned and deterministic:
+# a `git clone --branch main` RUN layer is cached by instruction text, so it never
+# re-clones when upstream advances and can silently ship a stale SDK. The final ead
+# link is static, so the runtime image does not need the SDK tree copied into it.
+COPY third_party/shifty/ $PKGROOT/shifty-src/
 WORKDIR $PKGROOT/shifty-src
-RUN git clone --depth 1 --branch "$SHIFTY_REF" "$SHIFTY_REPO" . && \
-    cmake -S cpp -B build/cpp \
+RUN cmake -S cpp -B build/cpp \
       -DSHIFTY_CPP_BUILD_TESTS=OFF \
       -DCMAKE_INSTALL_PREFIX="$SHIFTY_PREFIX" && \
     CARGO_BUILD_JOBS="$(nproc)" cmake --build build/cpp --target shifty_rust_build --parallel "$(nproc)" && \

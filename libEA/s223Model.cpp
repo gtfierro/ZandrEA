@@ -17,6 +17,7 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <iostream>
 #include <iterator>
 #include <map>
 #include <set>
@@ -688,7 +689,16 @@ std::vector<S223ToolStartupSpec> tool_specs_via_profile_witnesses(
          { witness.focus_node, witness.shape_id, witness.key, witness.value_nodes });
    }
 
-   return StartupSpecsFromModel(AssembleTools(witnesses, BuiltInAnalysisModules()));
+   const auto model = AssembleTools(witnesses, BuiltInAnalysisModules());
+   std::cout << "S223 profile/witness discovery: " << witnesses.size()
+             << " witness row(s) -> " << model.tools.size() << " tool(s), "
+             << model.diagnostics.size() << " diagnostic(s)" << std::endl;
+   for (const auto& diagnostic : model.diagnostics) {
+      std::cout << "  S223 discovery diagnostic [" << diagnostic.focusNode << "]: "
+                << diagnostic.message << std::endl;
+   }
+
+   return StartupSpecsFromModel(model);
 #else
    (void)shapeFiles;
    (void)siteFile;

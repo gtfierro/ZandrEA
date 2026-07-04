@@ -1,10 +1,10 @@
 //XXXXXXX1XXXXXXXXX2XXXXXXXXX3XXXXXXXXX4XXXXXXXXX5XXXXXXXXX6XXXXXXXXX7XXXXXXXXX8XXXXXXXXX9XXXXXXXXXCXXXXV
 /* File summary:
    Built-in analysis modules for the model-driven tool-contract entrypoint.  Each
-   module declares its ModuleManifest: the roles it needs, keyed to engine
-   construction attributes (EPointName/EDataLabel/EDataUnit/EDataRange/EPlotGroup)
-   copied from the corresponding legacy CTool_* constructor so the resolved points
-   are identical to the current build.  The FDD Build() step is the next slice.
+   module declares its ModuleManifest: role -> EPointName for the points the model
+   must supply, plus antecedent roles.  The existing CTool_* constructors build the
+   point objects and the whole FDD graph; the manifest does not duplicate their
+   unit/range/label attributes.
 
    Module role names must match the zea:roleName literals in
    EAd/tests/testdata/zea-profiles.ttl; the assembler reconciles the two.
@@ -15,7 +15,13 @@
 
 namespace {
 
-const std::string kProfileNs = "urn:zandrea:tool-profile#";
+// NOTE: deliberately NOT a namespace-scope `const std::string`. LibMain() is an
+// __attribute__((constructor)) that constructs CApplication (and thus runs S223
+// startup, including module registration) during dynamic initialization -- before
+// a std::string global in this TU is guaranteed initialized. A stale/empty prefix
+// there silently mis-keys the registry. The profile shape IRIs are written as
+// literals so they are correct at load time. (Same lesson as BuiltInToolProfiles;
+// see docs/tool-rdf-requirements.md.)
 
 PointRoleSpec Analog(const char* role, EPointName pointName) {
    return { RoleId{ role }, RoleValueKind::Analog, pointName, true };
@@ -34,7 +40,7 @@ class CAhuModule : public IAnalysisModule {
    public:
       const ModuleManifest& Manifest(void) const override {
          static const ModuleManifest manifest = {
-            kProfileNs + "AhuProfile",
+            "urn:zandrea:tool-profile#AhuProfile",
             "ahu_ibal",
             {
                Analog("supplyStaticPressure", EPointName::Pressure_static_air_supply),
@@ -62,7 +68,7 @@ class CVavModule : public IAnalysisModule {
    public:
       const ModuleManifest& Manifest(void) const override {
          static const ModuleManifest manifest = {
-            kProfileNs + "VavProfile",
+            "urn:zandrea:tool-profile#VavProfile",
             "vav_ibal",
             {
                Analog("inletStaticPressure", EPointName::Pressure_static_air_supply),
@@ -78,7 +84,9 @@ class CVavModule : public IAnalysisModule {
                Binary("zoneOccupied",        EPointName::Binary_zoneOccupied),
             },
             {
-               { RoleId{ "airSource" }, kProfileNs + "AhuProfile", true },
+               // Role name must match what the existing CTool_vav_ibal c-tor looks
+               // up (RequiredAntecedentSubjectKeyFromS223Role(..., "air_source")).
+               { RoleId{ "air_source" }, "urn:zandrea:tool-profile#AhuProfile", true },
             }
          };
          return manifest;

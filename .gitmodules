@@ -1,0 +1,3 @@
+[submodule "third_party/shifty"]
+	path = third_party/shifty
+	url = https://github.com/gtfierro/shifty.git
